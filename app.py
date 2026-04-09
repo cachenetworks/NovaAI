@@ -1,4 +1,4 @@
-from novaai.cli import main
+from novaai.launcher import main
 
 
 if __name__ == "__main__":

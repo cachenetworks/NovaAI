@@ -260,17 +260,22 @@ def ensure_stt_model(config: Config, state: SessionState) -> Any:
         ) from exc
 
 
-def recalibrate_microphone(config: Config, state: SessionState) -> None:
+def recalibrate_microphone(
+    config: Config,
+    state: SessionState,
+    announce: bool = True,
+) -> None:
     recognizer = ensure_speech_recognizer(config, state)
     if config.stt_ambient_duration_seconds <= 0:
         state.mic_calibrated = True
         return
 
-    print()
-    print(
-        f"[Mic] Calibrating {describe_selected_microphone(config)} for "
-        f"{config.stt_ambient_duration_seconds:.1f}s. Stay quiet for a moment."
-    )
+    if announce:
+        print()
+        print(
+            f"[Mic] Calibrating {describe_selected_microphone(config)} for "
+            f"{config.stt_ambient_duration_seconds:.1f}s. Stay quiet for a moment."
+        )
 
     with SoundDeviceMicrophone(
         device_index=config.mic_device_index,
@@ -282,7 +287,8 @@ def recalibrate_microphone(config: Config, state: SessionState) -> None:
         )
 
     state.mic_calibrated = True
-    print("[Mic] Calibration complete.")
+    if announce:
+        print("[Mic] Calibration complete.")
 
 
 def print_input_devices() -> None:
@@ -364,10 +370,14 @@ def transcribe_audio_with_google(
     return text, config.stt_language
 
 
-def recognize_speech(config: Config, state: SessionState) -> SpeechCapture:
+def recognize_speech(
+    config: Config,
+    state: SessionState,
+    announce: bool = True,
+) -> SpeechCapture:
     recognizer = ensure_speech_recognizer(config, state)
     if not state.mic_calibrated:
-        recalibrate_microphone(config, state)
+        recalibrate_microphone(config, state, announce=announce)
 
     with SoundDeviceMicrophone(
         device_index=config.mic_device_index,
