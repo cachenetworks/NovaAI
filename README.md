@@ -8,6 +8,7 @@ It can listen through your microphone, reply in text, and speak back with stream
 - Local Ollama chat with persistent recent history
 - Microphone input with `SpeechRecognition` and local `faster-whisper`
 - XTTS-v2 voice output with streamed playback
+- Startup auto-tuning based on CPU, RAM, and CUDA GPU capability
 - Configurable companion profile and memory notes
 - Windows-friendly setup with `setup.bat`
 - Modular Python package layout so contributors can work on one area at a time
@@ -64,6 +65,7 @@ NovaAI/
 |   |-- config.py
 |   |-- defaults.py
 |   |-- models.py
+|   |-- performance.py
 |   |-- paths.py
 |   |-- storage.py
 |   |-- tts.py
@@ -77,6 +79,7 @@ NovaAI/
 - `novaai/chat.py`: system prompt construction and Ollama requests
 - `novaai/audio_input.py`: microphone capture, STT, and mic calibration
 - `novaai/tts.py`: XTTS generation, streamed playback, and WAV output
+- `novaai/performance.py`: hardware detection and startup auto-tuning
 - `novaai/cli.py`: command handling and the main terminal loop
 
 ## Commands
@@ -92,6 +95,7 @@ NovaAI/
 - `/speakers` lists built-in XTTS voices
 - `/speaker <name>` switches XTTS voice
 - `/voice` toggles spoken replies on and off
+- `/performance` shows the detected hardware and active performance profile
 - `/profile` shows the saved companion profile
 - `/name <new name>` renames the companion
 - `/me <your name>` saves your name
@@ -101,11 +105,14 @@ NovaAI/
 
 ## Configuration Highlights
 
+- `AUTO_TUNE_PERFORMANCE`: enable or disable startup auto-tuning
+- `AUTO_TUNE_GOAL`: choose `speed`, `balanced`, or `quality`
 - `OLLAMA_MODEL`: the Ollama chat model name
 - `OLLAMA_NUM_PREDICT`: reply token budget
 - `XTTS_STREAM_OUTPUT`: stream speech while audio is generating
 - `XTTS_CHUNK_MAX_CHARS`: safe per-chunk XTTS text limit
 - `XTTS_MAX_TEXT_CHARS`: maximum total spoken text for one reply
+- `STT_USE_GPU`: manual fallback if auto-tune is disabled
 - `STT_MODEL`: faster-whisper model size, such as `small.en` or `medium.en`
 - `MIC_DEVICE_INDEX`: manually pin a microphone from `/mics`
 
@@ -113,6 +120,8 @@ NovaAI/
 
 - XTTS-v2 downloads large model files the first time it is used.
 - `faster-whisper` downloads its speech model the first time it is used.
+- With auto-tune on, NovaAI overrides a few performance-sensitive values at startup so the app matches the current machine better.
+- If you want to lock in your own values, set `AUTO_TUNE_PERFORMANCE=false` in `.env`.
 - Voice output is saved to `audio/latest_reply.wav` even when playback fails.
 - Runtime data like `.env`, `data/profile.json`, `data/history.jsonl`, and generated audio are ignored by git.
 

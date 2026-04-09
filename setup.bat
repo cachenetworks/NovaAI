@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 
 cd /d "%~dp0"
 
@@ -16,7 +16,7 @@ if exist ".venv\Scripts\python.exe" (
         exit /b 1
     )
 
-    %BOOTSTRAP% -m venv .venv
+    !BOOTSTRAP! -m venv .venv
     if errorlevel 1 exit /b 1
     set "BOOTSTRAP=.venv\Scripts\python.exe"
 )

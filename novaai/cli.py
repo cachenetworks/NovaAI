@@ -54,6 +54,12 @@ def print_welcome(profile: dict[str, Any], config: Config, state: SessionState) 
         f"(buffer {config.xtts_stream_buffer_seconds:.1f}s) | "
         f"Reply limit: {config.ollama_num_predict} tokens"
     )
+    print(
+        f"Performance: {config.performance_profile} | "
+        f"Auto-tune: {'on' if config.auto_tune_performance else 'off'} "
+        f"({config.auto_tune_goal})"
+    )
+    print(f"Hardware: {config.system_summary}")
     print(f"Microphone: {describe_selected_microphone(config)}")
     print(
         "Hands-free mode listens after each reply. Text mode keeps the keyboard prompt."
@@ -61,6 +67,7 @@ def print_welcome(profile: dict[str, Any], config: Config, state: SessionState) 
     print(
         "Commands: /help, /mode <voice|text>, /listen, /recalibrate, /mics, "
         "/mic <index|default>, /speakers, /speaker <name>, /voice [on|off], "
+        "/performance, "
         "/profile, /name <new name>, /me <your name>, /remember <fact>, "
         "/reset, /exit"
     )
@@ -85,12 +92,31 @@ def print_help() -> None:
     print("/voice                  Toggle spoken replies on or off")
     print("/voice on               Always speak replies")
     print("/voice off              Stop speaking replies")
+    print("/performance            Show the auto-tuned performance profile")
     print("/profile                Show the current saved profile")
     print("/name <new name>        Rename your companion")
     print("/me <your name>         Set your name")
     print("/remember <fact>        Save something important for future chats")
     print("/reset                  Clear conversation history")
     print("/exit                   Quit the app")
+    print()
+
+
+def print_performance_summary(config: Config) -> None:
+    print()
+    print(f"Performance profile: {config.performance_profile}")
+    print(
+        f"Auto-tune: {'on' if config.auto_tune_performance else 'off'} "
+        f"({config.auto_tune_goal})"
+    )
+    print(f"Hardware: {config.system_summary}")
+    print(
+        f"Active settings: reply limit {config.ollama_num_predict} | "
+        f"STT {describe_stt_backend(config)} | "
+        f"XTTS {get_xtts_device(config)} at speed {config.xtts_speed:.2f}"
+    )
+    for note in config.performance_notes:
+        print(f"- {note}")
     print()
 
 
@@ -264,6 +290,10 @@ def handle_command(
         print()
         print(json.dumps(profile, indent=2, ensure_ascii=False))
         print()
+        return CommandResult(handled=True)
+
+    if lowered in {"/performance", "/perf"}:
+        print_performance_summary(config)
         return CommandResult(handled=True)
 
     if lowered == "/reset":

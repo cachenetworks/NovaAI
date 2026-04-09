@@ -78,8 +78,8 @@ class SoundDeviceMicrophone(sr.AudioSource):
         self._raw_stream = None
 
 
-def get_stt_device() -> str:
-    if torch.cuda.is_available():
+def get_stt_device(config: Config) -> str:
+    if config.stt_use_gpu and torch.cuda.is_available():
         return "cuda"
     return "cpu"
 
@@ -87,7 +87,7 @@ def get_stt_device() -> str:
 def get_stt_compute_type(config: Config) -> str:
     if config.stt_compute_type and config.stt_compute_type not in {"auto", "default"}:
         return config.stt_compute_type
-    if get_stt_device() == "cuda":
+    if get_stt_device(config) == "cuda":
         return "float16"
     return "int8"
 
@@ -226,7 +226,7 @@ def get_stt_model_signature(config: Config) -> tuple[Any, ...]:
     return (
         config.stt_provider,
         config.stt_model,
-        get_stt_device(),
+        get_stt_device(config),
         get_stt_compute_type(config),
     )
 
@@ -249,7 +249,7 @@ def ensure_stt_model(config: Config, state: SessionState) -> Any:
     try:
         state.stt_model_instance = WhisperModel(
             config.stt_model,
-            device=get_stt_device(),
+            device=get_stt_device(config),
             compute_type=get_stt_compute_type(config),
         )
         state.stt_model_signature = signature
@@ -305,7 +305,7 @@ def describe_stt_backend(config: Config) -> str:
         return "google"
     return (
         f"faster-whisper ({config.stt_model}, "
-        f"{get_stt_device()}/{get_stt_compute_type(config)})"
+        f"{get_stt_device(config)}/{get_stt_compute_type(config)})"
     )
 
 
