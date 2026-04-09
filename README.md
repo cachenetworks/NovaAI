@@ -1,60 +1,83 @@
-# NovaAI With Ollama + XTTS-v2
+# NovaAI
 
-This project gives you `NovaAI`, a local AI friend / companion that:
+NovaAI is a local voice companion built on Ollama, faster-whisper, and XTTS-v2.
+It can listen through your microphone, reply in text, and speak back with streamed audio.
 
-- talks using an Ollama model such as `dolphin3`
-- listens through your microphone with the Python `SpeechRecognition` package
-- transcribes speech locally with `faster-whisper` for much better recognition than the basic web recognizer
-- remembers a few personal details and recent chat history
-- streams replies out loud with Coqui `XTTS-v2` as audio is generated
-- feels more natural because it uses a friend-style system prompt instead of an assistant-style one
+## Features
 
-## What is included
+- Local Ollama chat with persistent recent history
+- Microphone input with `SpeechRecognition` and local `faster-whisper`
+- XTTS-v2 voice output with streamed playback
+- Configurable companion profile and memory notes
+- Windows-friendly setup with `setup.bat`
+- Modular Python package layout so contributors can work on one area at a time
 
-- `app.py`: terminal chat app
-- `data/profile.json`: created automatically for your companion's identity and memory notes
-- `data/history.jsonl`: created automatically to keep recent conversation history
-- `audio/latest_reply.wav`: the newest spoken reply
+## Quick Start
 
-## 1. Install Ollama
-
-Install Ollama for Windows, then pull your model:
+1. Install Ollama for Windows.
+2. Pull a chat model, for example:
 
 ```powershell
 ollama pull dolphin3
 ```
 
-If the Ollama server is not already running on your PC, start it before running the app.
-
-## 2. Create a virtual environment
+3. Run the project setup:
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+.\setup.bat
 ```
 
-If you have an NVIDIA GPU and want faster XTTS replies, upgrade PyTorch to CUDA wheels:
+4. Start NovaAI:
 
 ```powershell
-python -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchcodec
+.\.venv\Scripts\python.exe app.py
 ```
 
-## 3. Create your local config
+If `.env` or `data/profile.json` do not exist yet, `setup.bat` will create them from the example files.
+
+## Optional GPU Upgrade
+
+If you have an NVIDIA GPU and want faster XTTS replies, upgrade PyTorch after setup:
 
 ```powershell
-Copy-Item .env.example .env
+.\.venv\Scripts\python.exe -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchcodec
 ```
 
-You can edit `.env` if you want to change the Ollama model, XTTS voice, or speech settings.
-By default, the app now starts in hands-free voice mode.
-The default config also keeps Ollama loaded, caps reply length for faster voice turns, streams XTTS audio as it is generated, and uses local `faster-whisper` for speech recognition.
+## Project Layout
 
-## 4. Run the companion
-
-```powershell
-python app.py
+```text
+NovaAI/
+|-- app.py
+|-- setup.bat
+|-- requirements.txt
+|-- LICENSE
+|-- .env.example
+|-- README.md
+|-- data/
+|   |-- profile.example.json
+|-- novaai/
+|   |-- __init__.py
+|   |-- __main__.py
+|   |-- audio_input.py
+|   |-- chat.py
+|   |-- cli.py
+|   |-- config.py
+|   |-- defaults.py
+|   |-- models.py
+|   |-- paths.py
+|   |-- storage.py
+|   |-- tts.py
+|   |-- utils.py
 ```
+
+## Module Guide
+
+- `novaai/config.py`: environment parsing and runtime configuration
+- `novaai/storage.py`: profile and chat history loading/saving
+- `novaai/chat.py`: system prompt construction and Ollama requests
+- `novaai/audio_input.py`: microphone capture, STT, and mic calibration
+- `novaai/tts.py`: XTTS generation, streamed playback, and WAV output
+- `novaai/cli.py`: command handling and the main terminal loop
 
 ## Commands
 
@@ -62,40 +85,46 @@ python app.py
 - `/mode voice` turns on hands-free microphone input
 - `/mode text` switches back to typing
 - `/listen` captures one spoken turn immediately
-- `/recalibrate` recalibrates the microphone if it starts clipping words
+- `/recalibrate` relearns room noise before listening
 - `/mics` lists available microphone devices
 - `/mic <index>` chooses a microphone
 - `/mic default` switches back to the system default microphone
-- `/speakers` lists the built-in XTTS voices
-- `/speaker <name>` switches to a different XTTS built-in voice
+- `/speakers` lists built-in XTTS voices
+- `/speaker <name>` switches XTTS voice
 - `/voice` toggles spoken replies on and off
-- `/voice on` and `/voice off` set spoken replies directly
-- `/profile` shows your saved profile
+- `/profile` shows the saved companion profile
 - `/name <new name>` renames the companion
-- `/me <your name>` sets your name
-- `/remember <fact>` stores something important for future chats
+- `/me <your name>` saves your name
+- `/remember <fact>` stores a memory note
 - `/reset` clears conversation history
 - `/exit` quits the app
 
+## Configuration Highlights
+
+- `OLLAMA_MODEL`: the Ollama chat model name
+- `OLLAMA_NUM_PREDICT`: reply token budget
+- `XTTS_STREAM_OUTPUT`: stream speech while audio is generating
+- `XTTS_CHUNK_MAX_CHARS`: safe per-chunk XTTS text limit
+- `XTTS_MAX_TEXT_CHARS`: maximum total spoken text for one reply
+- `STT_MODEL`: faster-whisper model size, such as `small.en` or `medium.en`
+- `MIC_DEVICE_INDEX`: manually pin a microphone from `/mics`
+
 ## Notes
 
-- XTTS-v2 downloads roughly 2 GB of model files the first time it is used.
-- On a clean machine, the first XTTS-v2 download may ask you to accept Coqui's CPML terms before it downloads the model.
-- XTTS-v2 supports either built-in speakers or a custom reference voice file through `XTTS_SPEAKER_WAV`.
-- If you want to clone a voice, put a clean sample like `voices/me.wav` in the project and set `XTTS_SPEAKER_WAV=voices/me.wav` in `.env`.
-- `faster-whisper` downloads its speech model the first time you use it. After that, speech recognition works locally.
-- `STT_MODEL=small.en` is the current default because it is a good quality/speed balance for English conversation.
-- Leave `STT_COMPUTE_TYPE` blank unless you want to force a specific mode. The app will choose `float16` on CUDA and `int8` on CPU automatically.
-- If you want an even stronger recognizer and do not mind extra latency, try `STT_MODEL=medium.en`.
-- With streaming on, reply audio plays through `sounddevice` as XTTS generates chunks. If you turn streaming off, Windows falls back to the built-in media API for WAV playback.
-- With `XTTS_STREAM_OUTPUT=true`, the app starts playing speech before the full WAV is finished. It still saves the complete reply to `audio/latest_reply.wav`.
-- `XTTS_STREAM_BUFFER_SECONDS` adds a small startup buffer before streamed playback begins. Raising it can fix little audio cutouts on slower machines.
-- `XTTS_CHUNK_MAX_CHARS` keeps each XTTS chunk below the model text limit. Leave this around `240` for XTTS.
-- `XTTS_MAX_TEXT_CHARS` controls the total amount of text the app is willing to speak for one reply. You can set this much higher, such as `5000`.
-- `OLLAMA_NUM_PREDICT` limits how long replies can run by default, which makes both response generation and voice playback feel quicker.
-- `XTTS_SPEED` slightly increases speaking speed without changing the voice.
-- If your spoken language is not `en-US`, change `STT_LANGUAGE` in `.env`.
-- If the wrong microphone is used, run `/mics` and either set `MIC_DEVICE_INDEX` in `.env` or use `/mic <index>` while the app is running.
-- The app now calibrates room noise once before listening, which helps stop the first words from being clipped. If the room changes, run `/recalibrate`.
-- If the mic recognizer fails, the app falls back to text mode so the session does not get stuck.
-- If voice playback does not work on your machine, the app still saves the WAV file in `audio/latest_reply.wav`.
+- XTTS-v2 downloads large model files the first time it is used.
+- `faster-whisper` downloads its speech model the first time it is used.
+- Voice output is saved to `audio/latest_reply.wav` even when playback fails.
+- Runtime data like `.env`, `data/profile.json`, `data/history.jsonl`, and generated audio are ignored by git.
+
+## Contributing
+
+The project is intentionally split into modules so different contributors can work in parallel without constantly editing one giant file. A good starting point is:
+
+- voice or mic issues: `novaai/audio_input.py`
+- personality or response logic: `novaai/chat.py`
+- XTTS or playback issues: `novaai/tts.py`
+- command flow or app behavior: `novaai/cli.py`
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).

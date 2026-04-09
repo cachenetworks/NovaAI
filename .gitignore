@@ -2,8 +2,11 @@
 .venv/
 .venv-xtts/
 __pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 audio/
 data/history.jsonl
 data/profile.json
 vendor/
-data/
