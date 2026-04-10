@@ -91,6 +91,77 @@ def resolve_output_device_info(device_index: int | None) -> dict[str, Any]:
     }
 
 
+def output_device_name_key(device_name: str) -> str:
+    normalized = normalize_audio_device_name(device_name).lower()
+    simplified = re.sub(r"[^a-z0-9]+", "", normalized)
+    if not simplified:
+        return normalized
+    return simplified[:28]
+
+
+def resolve_output_hostapi_name(
+    device: dict[str, Any],
+    hostapi_names: list[str],
+) -> str:
+    hostapi_index = device.get("hostapi")
+    if (
+        isinstance(hostapi_index, int)
+        and 0 <= hostapi_index < len(hostapi_names)
+    ):
+        return hostapi_names[hostapi_index]
+    return ""
+
+
+def choose_compatible_output_device_index(
+    output_device_index: int | None,
+) -> int | None:
+    if output_device_index is None:
+        return None
+
+    try:
+        all_devices = sd.query_devices()
+        selected_device = sd.query_devices(output_device_index, "output")
+    except Exception:
+        return output_device_index
+
+    hostapi_names = get_hostapi_names()
+    selected_hostapi = resolve_output_hostapi_name(selected_device, hostapi_names)
+    if selected_hostapi not in {"Windows WASAPI", "Windows WDM-KS", "WDM-KS"}:
+        return output_device_index
+
+    selected_key = output_device_name_key(str(selected_device.get("name", "")))
+    if not selected_key:
+        return output_device_index
+
+    hostapi_priority = {
+        "Windows DirectSound": 0,
+        "MME": 1,
+        "Windows WASAPI": 2,
+        "Windows WDM-KS": 3,
+        "WDM-KS": 3,
+        "ASIO": 4,
+    }
+    best_index = output_device_index
+    best_score = (hostapi_priority.get(selected_hostapi, 9), output_device_index)
+
+    for index, device in enumerate(all_devices):
+        max_output_channels = device.get("max_output_channels", 0)
+        if not isinstance(max_output_channels, (int, float)) or max_output_channels <= 0:
+            continue
+
+        device_key = output_device_name_key(str(device.get("name", "")))
+        if device_key != selected_key:
+            continue
+
+        hostapi_name = resolve_output_hostapi_name(device, hostapi_names)
+        score = (hostapi_priority.get(hostapi_name, 9), index)
+        if score < best_score:
+            best_score = score
+            best_index = index
+
+    return best_index
+
+
 def list_output_devices_compact(max_devices: int = 24) -> list[dict[str, Any]]:
     try:
         devices = sd.query_devices()
@@ -100,17 +171,18 @@ def list_output_devices_compact(max_devices: int = 24) -> list[dict[str, Any]]:
     default_index = get_default_output_device_index()
     hostapi_names = get_hostapi_names()
     hostapi_priority = {
-        "Windows WASAPI": 0,
-        "Windows DirectSound": 1,
-        "WDM-KS": 2,
+        # Favor the shared-mode APIs first for compatibility.
+        "Windows DirectSound": 0,
+        "MME": 1,
+        "Windows WASAPI": 2,
+        "WDM-KS": 3,
         "ASIO": 3,
-        "MME": 4,
+        "Windows WDM-KS": 4,
     }
     ignored_names = {
         "primary sound driver",
         "microsoft sound mapper - output",
     }
-
     compact: dict[str, dict[str, Any]] = {}
     for index, device in enumerate(devices):
         max_output_channels = device.get("max_output_channels", 0)
@@ -137,13 +209,14 @@ def list_output_devices_compact(max_devices: int = 24) -> list[dict[str, Any]]:
             "_score": (
                 0 if index == default_index else 1,
                 hostapi_priority.get(hostapi_name, 9),
+                -len(normalized_name),
                 index,
             ),
         }
 
-        existing = compact.get(normalized_name.lower())
+        existing = compact.get(output_device_name_key(normalized_name))
         if existing is None or candidate["_score"] < existing["_score"]:
-            compact[normalized_name.lower()] = candidate
+            compact[output_device_name_key(normalized_name)] = candidate
 
     devices_out = sorted(
         compact.values(),
@@ -171,6 +244,7 @@ def describe_selected_speaker(config: Config) -> str:
 
 @dataclass(frozen=True)
 class OutputPlaybackPlan:
+    output_device_index: int | None
     sample_rate: int
     requires_resample: bool
 
@@ -256,10 +330,13 @@ def choose_output_playback_plan(
     source_sample_rate: int,
     channels: int = 1,
 ) -> OutputPlaybackPlan:
+    resolved_output_device_index = choose_compatible_output_device_index(
+        output_device_index
+    )
     normalized_source_rate = max(8000, int(source_sample_rate))
     device_default_rate: int | None = None
     try:
-        device_info = resolve_output_device_info(output_device_index)
+        device_info = resolve_output_device_info(resolved_output_device_index)
         device_default_rate = max(8000, int(device_info["default_sample_rate"]))
     except RuntimeError:
         device_default_rate = None
@@ -268,21 +345,23 @@ def choose_output_playback_plan(
     # uncommon rates but still run the stream at their native mode, which can sound
     # chipmunked. Using the default device rate avoids that class of mismatch.
     if device_default_rate is not None and can_use_output_sample_rate(
-        output_device_index,
+        resolved_output_device_index,
         device_default_rate,
         channels=channels,
     ):
         return OutputPlaybackPlan(
+            output_device_index=resolved_output_device_index,
             sample_rate=device_default_rate,
             requires_resample=device_default_rate != normalized_source_rate,
         )
 
     if can_use_output_sample_rate(
-        output_device_index,
+        resolved_output_device_index,
         normalized_source_rate,
         channels=channels,
     ):
         return OutputPlaybackPlan(
+            output_device_index=resolved_output_device_index,
             sample_rate=normalized_source_rate,
             requires_resample=False,
         )
@@ -298,11 +377,12 @@ def choose_output_playback_plan(
             continue
         seen_rates.add(candidate_rate)
         if can_use_output_sample_rate(
-            output_device_index,
+            resolved_output_device_index,
             candidate_rate,
             channels=channels,
         ):
             return OutputPlaybackPlan(
+                output_device_index=resolved_output_device_index,
                 sample_rate=candidate_rate,
                 requires_resample=candidate_rate != normalized_source_rate,
             )
@@ -316,6 +396,7 @@ def choose_output_playback_plan(
         normalized_source_rate,
     )
     return OutputPlaybackPlan(
+        output_device_index=resolved_output_device_index,
         sample_rate=fallback_rate,
         requires_resample=fallback_rate != normalized_source_rate,
     )
@@ -698,7 +779,7 @@ def stream_xtts_audio(
         dtype="float32",
         blocksize=2048,
         latency="high",
-        device=config.speaker_device_index,
+        device=playback_plan.output_device_index,
     )
     stream_resampler = (
         StreamingLinearResampler(sample_rate, playback_plan.sample_rate)
@@ -812,7 +893,7 @@ def play_wav_with_sounddevice(
         sd.play(
             playback_audio,
             samplerate=playback_plan.sample_rate,
-            device=output_device_index,
+            device=playback_plan.output_device_index,
             blocking=True,
         )
     except Exception as exc:

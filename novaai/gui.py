@@ -736,6 +736,9 @@ class NovaAIGui:
         mic_map: dict[str, int | None] = {"System default microphone": None}
         for device in microphones:
             label = device["name"]
+            hostapi = str(device.get("hostapi", "")).strip()
+            if hostapi:
+                label = f"{label} [{hostapi}]"
             if device["is_default"]:
                 label += " (default)"
             if label in mic_map:
@@ -745,6 +748,9 @@ class NovaAIGui:
         speaker_map: dict[str, int | None] = {"System default speaker": None}
         for device in speakers:
             label = device["name"]
+            hostapi = str(device.get("hostapi", "")).strip()
+            if hostapi:
+                label = f"{label} [{hostapi}]"
             if device["is_default"]:
                 label += " (default)"
             if label in speaker_map:
