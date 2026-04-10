@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import numpy as np
@@ -115,6 +116,25 @@ def get_default_input_device_index() -> int | None:
     return candidate_index
 
 
+def normalize_audio_device_name(name: str) -> str:
+    cleaned = re.sub(r"\s+", " ", name).strip()
+    cleaned = re.sub(r"\s+\((mme|wasapi|wdm-ks|directsound|asio)\)$", "", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
+def get_hostapi_names() -> list[str]:
+    try:
+        hostapis = sd.query_hostapis()
+    except Exception:
+        return []
+
+    names: list[str] = []
+    for hostapi in hostapis:
+        name = hostapi.get("name", "")
+        names.append(str(name))
+    return names
+
+
 def resolve_input_device_info(device_index: int | None) -> dict[str, Any]:
     try:
         if device_index is None:
@@ -142,7 +162,7 @@ def resolve_input_device_info(device_index: int | None) -> dict[str, Any]:
 
     return {
         "index": resolved_index,
-        "name": device_name,
+        "name": normalize_audio_device_name(device_name),
         "default_sample_rate": int(default_sample_rate),
     }
 
@@ -166,6 +186,71 @@ def list_input_devices() -> list[dict[str, Any]]:
                 }
             )
     return input_devices
+
+
+def list_input_devices_compact(max_devices: int = 24) -> list[dict[str, Any]]:
+    try:
+        devices = sd.query_devices()
+    except Exception as exc:
+        raise RuntimeError(f"I couldn't list microphone devices. {exc}") from exc
+
+    default_index = get_default_input_device_index()
+    hostapi_names = get_hostapi_names()
+    hostapi_priority = {
+        "Windows WASAPI": 0,
+        "Windows DirectSound": 1,
+        "WDM-KS": 2,
+        "ASIO": 3,
+        "MME": 4,
+    }
+    ignored_names = {
+        "primary sound capture driver",
+        "microsoft sound mapper - input",
+    }
+
+    compact: dict[str, dict[str, Any]] = {}
+    for index, device in enumerate(devices):
+        max_input_channels = device.get("max_input_channels", 0)
+        if not isinstance(max_input_channels, (int, float)) or max_input_channels <= 0:
+            continue
+
+        raw_name = str(device.get("name", "Input device"))
+        normalized_name = normalize_audio_device_name(raw_name)
+        if normalized_name.strip().lower() in ignored_names:
+            continue
+
+        hostapi_index = device.get("hostapi")
+        hostapi_name = (
+            hostapi_names[int(hostapi_index)]
+            if isinstance(hostapi_index, int)
+            and 0 <= hostapi_index < len(hostapi_names)
+            else ""
+        )
+        candidate = {
+            "index": index,
+            "name": normalized_name,
+            "hostapi": hostapi_name,
+            "is_default": index == default_index,
+            "_score": (
+                0 if index == default_index else 1,
+                hostapi_priority.get(hostapi_name, 9),
+                index,
+            ),
+        }
+
+        existing = compact.get(normalized_name.lower())
+        if existing is None or candidate["_score"] < existing["_score"]:
+            compact[normalized_name.lower()] = candidate
+
+    devices_out = sorted(
+        compact.values(),
+        key=lambda item: (0 if item["is_default"] else 1, item["name"].lower()),
+    )
+    if max_devices > 0:
+        devices_out = devices_out[:max_devices]
+    for item in devices_out:
+        item.pop("_score", None)
+    return devices_out
 
 
 def describe_selected_microphone(config: Config) -> str:

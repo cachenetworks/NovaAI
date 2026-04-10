@@ -101,6 +101,7 @@ class Config:
     stt_energy_threshold: int
     stt_dynamic_energy_threshold: bool
     mic_device_index: int | None
+    speaker_device_index: int | None
     mic_sample_rate: int | None
     mic_chunk_size: int
 
@@ -287,6 +288,7 @@ class Config:
                 "STT_DYNAMIC_ENERGY_THRESHOLD", True
             ),
             mic_device_index=parse_optional_int_env("MIC_DEVICE_INDEX"),
+            speaker_device_index=parse_optional_int_env("SPEAKER_DEVICE_INDEX"),
             mic_sample_rate=parse_optional_int_env("MIC_SAMPLE_RATE"),
             mic_chunk_size=mic_chunk_size,
         )

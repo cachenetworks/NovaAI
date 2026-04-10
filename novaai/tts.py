@@ -14,6 +14,7 @@ import sounddevice as sd
 import torch
 from TTS.api import TTS
 
+from .audio_input import get_hostapi_names, normalize_audio_device_name
 from .config import Config
 from .models import SessionState
 from .paths import AUDIO_DIR, ROOT_DIR, XTTS_STREAM_END
@@ -33,6 +34,138 @@ def get_xtts_device(config: Config) -> str:
     if config.xtts_use_gpu and torch.cuda.is_available():
         return "cuda"
     return "cpu"
+
+
+def get_default_output_device_index() -> int | None:
+    default_device = sd.default.device
+    if isinstance(default_device, (list, tuple)):
+        if len(default_device) < 2:
+            return None
+        candidate = default_device[1]
+    else:
+        candidate = None
+
+    if candidate is None:
+        return None
+
+    try:
+        candidate_index = int(candidate)
+    except (TypeError, ValueError):
+        return None
+
+    if candidate_index < 0:
+        return None
+    return candidate_index
+
+
+def resolve_output_device_info(device_index: int | None) -> dict[str, Any]:
+    try:
+        if device_index is None:
+            device = sd.query_devices(kind="output")
+            resolved_index = get_default_output_device_index()
+        else:
+            device = sd.query_devices(device_index, "output")
+            resolved_index = device_index
+    except Exception as exc:
+        chosen = (
+            "the default speaker"
+            if device_index is None
+            else f"speaker #{device_index}"
+        )
+        raise RuntimeError(
+            f"I couldn't access {chosen}. Refresh devices and try another option."
+        ) from exc
+
+    device_name = str(device.get("name", "Output device"))
+    default_sample_rate = device.get("default_samplerate")
+    if not isinstance(default_sample_rate, (int, float)) or default_sample_rate <= 0:
+        raise RuntimeError(
+            f"The speaker '{device_name}' did not report a valid sample rate."
+        )
+
+    return {
+        "index": resolved_index,
+        "name": normalize_audio_device_name(device_name),
+        "default_sample_rate": int(default_sample_rate),
+    }
+
+
+def list_output_devices_compact(max_devices: int = 24) -> list[dict[str, Any]]:
+    try:
+        devices = sd.query_devices()
+    except Exception as exc:
+        raise RuntimeError(f"I couldn't list speaker devices. {exc}") from exc
+
+    default_index = get_default_output_device_index()
+    hostapi_names = get_hostapi_names()
+    hostapi_priority = {
+        "Windows WASAPI": 0,
+        "Windows DirectSound": 1,
+        "WDM-KS": 2,
+        "ASIO": 3,
+        "MME": 4,
+    }
+    ignored_names = {
+        "primary sound driver",
+        "microsoft sound mapper - output",
+    }
+
+    compact: dict[str, dict[str, Any]] = {}
+    for index, device in enumerate(devices):
+        max_output_channels = device.get("max_output_channels", 0)
+        if not isinstance(max_output_channels, (int, float)) or max_output_channels <= 0:
+            continue
+
+        raw_name = str(device.get("name", "Output device"))
+        normalized_name = normalize_audio_device_name(raw_name)
+        if normalized_name.strip().lower() in ignored_names:
+            continue
+
+        hostapi_index = device.get("hostapi")
+        hostapi_name = (
+            hostapi_names[int(hostapi_index)]
+            if isinstance(hostapi_index, int)
+            and 0 <= hostapi_index < len(hostapi_names)
+            else ""
+        )
+        candidate = {
+            "index": index,
+            "name": normalized_name,
+            "hostapi": hostapi_name,
+            "is_default": index == default_index,
+            "_score": (
+                0 if index == default_index else 1,
+                hostapi_priority.get(hostapi_name, 9),
+                index,
+            ),
+        }
+
+        existing = compact.get(normalized_name.lower())
+        if existing is None or candidate["_score"] < existing["_score"]:
+            compact[normalized_name.lower()] = candidate
+
+    devices_out = sorted(
+        compact.values(),
+        key=lambda item: (0 if item["is_default"] else 1, item["name"].lower()),
+    )
+    if max_devices > 0:
+        devices_out = devices_out[:max_devices]
+    for item in devices_out:
+        item.pop("_score", None)
+    return devices_out
+
+
+def describe_selected_speaker(config: Config) -> str:
+    try:
+        device_info = resolve_output_device_info(config.speaker_device_index)
+    except RuntimeError:
+        if config.speaker_device_index is None:
+            return "default speaker"
+        return f"speaker #{config.speaker_device_index}"
+
+    if config.speaker_device_index is None:
+        return f"default speaker ({device_info['name']})"
+    return f"#{device_info['index']} ({device_info['name']})"
 
 
 def ensure_xtts_model(config: Config, state: SessionState) -> TTS:
@@ -358,6 +491,7 @@ def stream_xtts_audio(
         dtype="float32",
         blocksize=2048,
         latency="high",
+        device=config.speaker_device_index,
     )
 
     try:
@@ -412,7 +546,46 @@ def get_mci_error(error_code: int) -> str:
     return buffer.value or f"MCI error {error_code}"
 
 
-def play_audio_file(audio_path: Path) -> None:
+def play_wav_with_sounddevice(
+    audio_path: Path,
+    output_device_index: int | None = None,
+) -> None:
+    with wave.open(str(audio_path), "rb") as wav_file:
+        channels = wav_file.getnchannels()
+        sample_width = wav_file.getsampwidth()
+        sample_rate = wav_file.getframerate()
+        frames = wav_file.readframes(wav_file.getnframes())
+
+    if sample_width != 2:
+        raise RuntimeError(
+            "Only 16-bit PCM WAV playback is supported for direct device output."
+        )
+
+    audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+    if channels > 1:
+        audio = audio.reshape(-1, channels)
+    else:
+        audio = audio.reshape(-1, 1)
+
+    try:
+        sd.play(audio, samplerate=sample_rate, device=output_device_index, blocking=True)
+    except Exception as exc:
+        selected = (
+            "the default speaker"
+            if output_device_index is None
+            else f"speaker #{output_device_index}"
+        )
+        raise RuntimeError(f"Could not play audio on {selected}. {exc}") from exc
+
+
+def play_audio_file(
+    audio_path: Path,
+    output_device_index: int | None = None,
+) -> None:
+    if audio_path.suffix.lower() == ".wav":
+        play_wav_with_sounddevice(audio_path, output_device_index)
+        return
+
     if os.name != "nt":
         raise RuntimeError("Automatic audio playback is only implemented for Windows.")
 

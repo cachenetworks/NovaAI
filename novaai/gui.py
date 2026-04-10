@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import threading
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 
 from .audio_input import (
     describe_selected_microphone,
     describe_stt_backend,
+    list_input_devices_compact,
     recalibrate_microphone,
     recognize_speech,
 )
@@ -21,7 +22,14 @@ from .storage import (
     read_recent_history,
     reset_history,
 )
-from .tts import describe_tts_voice, get_xtts_device, play_audio_file, speak_text
+from .tts import (
+    describe_selected_speaker,
+    describe_tts_voice,
+    get_xtts_device,
+    list_output_devices_compact,
+    play_audio_file,
+    speak_text,
+)
 
 PALETTE = {
     "bg": "#07131d",
@@ -131,21 +139,21 @@ class NovaAIGui:
 
         self.control_tiles: dict[str, dict[str, object]] = {}
         self.message_body_labels: list[tuple[tk.Label, str]] = []
+        self.mic_choice_map: dict[str, int | None] = {}
+        self.speaker_choice_map: dict[str, int | None] = {}
 
         self.status_text = tk.StringVar(value="Press Start Session to begin.")
         self.status_badge_text = tk.StringVar(value="Standby")
         self.hero_subtitle_text = tk.StringVar()
-        self.profile_text = tk.StringVar()
-        self.performance_text = tk.StringVar()
-        self.mic_text = tk.StringVar()
-        self.voice_text = tk.StringVar()
-        self.mode_text = tk.StringVar()
+        self.mic_select_text = tk.StringVar(value="System default microphone")
+        self.speaker_select_text = tk.StringVar(value="System default speaker")
         self.model_badge_text = tk.StringVar()
         self.mode_badge_text = tk.StringVar()
         self.voice_badge_text = tk.StringVar()
         self.mic_badge_text = tk.StringVar()
 
         self._build_ui()
+        self._refresh_audio_device_choices(silent=True)
         self._load_recent_history()
         self._refresh_summary_labels()
         self._refresh_controls()
@@ -158,6 +166,7 @@ class NovaAIGui:
         self._append_system_message(
             "Mic mute is app-level. It blocks new captures here without touching the Windows microphone state."
         )
+        self._print_console_diagnostics()
 
         if (
             self.auto_listen_on_launch
@@ -180,6 +189,26 @@ class NovaAIGui:
 
         self.root.geometry(f"{width}x{height}+{x_pos}+{y_pos}")
         self.root.minsize(min(width, 920), min(height, 620))
+
+    def _print_console_diagnostics(self) -> None:
+        companion_name = self.profile.get("companion_name", "NovaAI")
+        user_name = self.profile.get("user_name", "You")
+        print()
+        print(f"[NovaAI GUI] Companion: {companion_name} | User: {user_name}")
+        print(
+            f"[NovaAI GUI] Model: {self.config.model} | "
+            f"Profile: {self.config.performance_profile} | "
+            f"Hardware: {self.config.system_summary}"
+        )
+        print(
+            f"[NovaAI GUI] STT: {describe_stt_backend(self.config)} | "
+            f"TTS: {describe_tts_voice(self.config)} on {get_xtts_device(self.config)}"
+        )
+        print(
+            f"[NovaAI GUI] Mic: {describe_selected_microphone(self.config)} | "
+            f"Speaker: {describe_selected_speaker(self.config)}"
+        )
+        print()
 
     def _build_ui(self) -> None:
         self.root.grid_columnconfigure(0, weight=1)
@@ -282,29 +311,6 @@ class NovaAIGui:
             anchor="w",
             wraplength=280,
         ).pack(anchor="w", fill="x")
-
-        tk.Frame(pulse_card, bg=PALETTE["border_soft"], height=1).pack(
-            fill="x", pady=(16, 14)
-        )
-
-        tk.Label(
-            pulse_card,
-            text="CONNECTED IDENTITIES",
-            bg=PALETTE["card_alt"],
-            fg=PALETTE["muted_soft"],
-            font=("Bahnschrift SemiBold", 9),
-        ).pack(anchor="w")
-
-        tk.Label(
-            pulse_card,
-            textvariable=self.profile_text,
-            bg=PALETTE["card_alt"],
-            fg=PALETTE["muted"],
-            font=("Segoe UI", 10),
-            justify="left",
-            anchor="w",
-            wraplength=280,
-        ).pack(anchor="w", fill="x", pady=(8, 0))
 
         conversation_card = self._make_shell_card(shell, bg=PALETTE["card"])
         conversation_card.grid(row=1, column=0, sticky="nsew", padx=(0, 18))
@@ -481,35 +487,8 @@ class NovaAIGui:
         self.sidebar_canvas.bind("<MouseWheel>", self._on_sidebar_mousewheel)
         self.sidebar_content.bind("<MouseWheel>", self._on_sidebar_mousewheel)
 
-        summary_card = self._make_shell_card(self.sidebar_content, bg=PALETTE["card_alt"])
-        summary_card.grid(row=0, column=0, sticky="ew")
-
-        tk.Label(
-            summary_card,
-            text="System Snapshot",
-            bg=PALETTE["card_alt"],
-            fg=PALETTE["text"],
-            font=("Bahnschrift SemiBold", 16),
-        ).pack(anchor="w")
-
-        tk.Label(
-            summary_card,
-            text="The live rig at a glance, including performance profile, audio path, and operating mode.",
-            bg=PALETTE["card_alt"],
-            fg=PALETTE["muted"],
-            font=("Segoe UI", 10),
-            wraplength=280,
-            justify="left",
-            anchor="w",
-        ).pack(anchor="w", fill="x", pady=(6, 14))
-
-        self._make_info_block(summary_card, "Performance", self.performance_text)
-        self._make_info_block(summary_card, "Microphone + STT", self.mic_text)
-        self._make_info_block(summary_card, "Voice Output", self.voice_text)
-        self._make_info_block(summary_card, "Operating Mode", self.mode_text)
-
         controls_card = self._make_shell_card(self.sidebar_content, bg=PALETTE["card"])
-        controls_card.grid(row=1, column=0, sticky="ew", pady=(16, 0))
+        controls_card.grid(row=0, column=0, sticky="ew")
 
         tk.Label(
             controls_card,
@@ -521,7 +500,7 @@ class NovaAIGui:
 
         tk.Label(
             controls_card,
-            text="Primary voice controls are grouped here so the desktop app feels more like a control panel than a terminal wrapper.",
+            text="Only the core controls are shown here. Runtime diagnostics stay in the console.",
             bg=PALETTE["card"],
             fg=PALETTE["muted"],
             font=("Segoe UI", 10),
@@ -529,6 +508,99 @@ class NovaAIGui:
             justify="left",
             anchor="w",
         ).pack(anchor="w", fill="x", pady=(6, 14))
+
+        selector_style = ttk.Style(self.root)
+        try:
+            selector_style.theme_use("clam")
+        except tk.TclError:
+            pass
+        selector_style.configure(
+            "NovaAI.TCombobox",
+            fieldbackground=PALETTE["input"],
+            background=PALETTE["input"],
+            foreground=PALETTE["text"],
+            bordercolor=PALETTE["border_soft"],
+            lightcolor=PALETTE["border_soft"],
+            darkcolor=PALETTE["border_soft"],
+            arrowcolor=PALETTE["accent"],
+            insertcolor=PALETTE["text"],
+        )
+
+        device_card = tk.Frame(
+            controls_card,
+            bg=PALETTE["card_alt"],
+            padx=12,
+            pady=12,
+            highlightthickness=1,
+            highlightbackground=PALETTE["border_soft"],
+            highlightcolor=PALETTE["border_soft"],
+        )
+        device_card.pack(fill="x", pady=(0, 12))
+        device_card.grid_columnconfigure(0, weight=1)
+
+        tk.Label(
+            device_card,
+            text="Audio Devices",
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["text"],
+            font=("Bahnschrift SemiBold", 11),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+
+        self.refresh_devices_button = tk.Button(
+            device_card,
+            text="Refresh",
+            command=self.refresh_audio_devices,
+            bg=PALETTE["card"],
+            fg=PALETTE["text"],
+            activebackground=PALETTE["input"],
+            activeforeground=PALETTE["text"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=6,
+            font=("Segoe UI Semibold", 9),
+            cursor="hand2",
+        )
+        self.refresh_devices_button.grid(row=0, column=1, sticky="e")
+
+        tk.Label(
+            device_card,
+            text="Microphone",
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["muted"],
+            font=("Segoe UI", 9),
+            anchor="w",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 4))
+
+        self.mic_selector = ttk.Combobox(
+            device_card,
+            textvariable=self.mic_select_text,
+            state="readonly",
+            style="NovaAI.TCombobox",
+            font=("Segoe UI", 10),
+        )
+        self.mic_selector.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self.mic_selector.bind("<<ComboboxSelected>>", self._on_mic_selected)
+
+        tk.Label(
+            device_card,
+            text="Speaker",
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["muted"],
+            font=("Segoe UI", 9),
+            anchor="w",
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 4))
+
+        self.speaker_selector = ttk.Combobox(
+            device_card,
+            textvariable=self.speaker_select_text,
+            state="readonly",
+            style="NovaAI.TCombobox",
+            font=("Segoe UI", 10),
+        )
+        self.speaker_selector.grid(row=4, column=0, columnspan=2, sticky="ew")
+        self.speaker_selector.bind("<<ComboboxSelected>>", self._on_speaker_selected)
 
         action_grid = tk.Frame(controls_card, bg=PALETTE["card"])
         action_grid.pack(fill="x")
@@ -598,60 +670,25 @@ class NovaAIGui:
         )
         self._make_control_tile(
             action_grid,
-            key="performance",
-            title="Performance",
-            subtitle="Post the live tuning profile.",
-            command=self.show_performance,
-            tone="neutral",
-            row=3,
-            column=1,
-        )
-        self._make_control_tile(
-            action_grid,
             key="clear_history",
             title="Clear History",
             subtitle="Wipe the saved transcript.",
             command=self.clear_history,
             tone="danger",
+            row=3,
+            column=1,
+        )
+        self._make_control_tile(
+            action_grid,
+            key="performance",
+            title="Diagnostics",
+            subtitle="Print runtime details to console.",
+            command=self.show_performance,
+            tone="neutral",
             row=4,
             column=0,
             columnspan=2,
         )
-
-        notes_card = self._make_shell_card(self.sidebar_content, bg=PALETTE["card_alt"])
-        notes_card.grid(row=2, column=0, sticky="ew", pady=(16, 0))
-
-        tk.Label(
-            notes_card,
-            text="Command Lane",
-            bg=PALETTE["card_alt"],
-            fg=PALETTE["text"],
-            font=("Bahnschrift SemiBold", 16),
-        ).pack(anchor="w")
-
-        tk.Label(
-            notes_card,
-            text="/listen  /performance  /voice  /reset  /help",
-            bg=PALETTE["card_alt"],
-            fg=PALETTE["accent"],
-            font=("Bahnschrift SemiBold", 11),
-            justify="left",
-            anchor="w",
-        ).pack(anchor="w", pady=(10, 8))
-
-        tk.Label(
-            notes_card,
-            text=(
-                "Need a manual GitHub refresh instead of waiting for startup checks? "
-                "Run update.bat from the project root."
-            ),
-            bg=PALETTE["card_alt"],
-            fg=PALETTE["muted"],
-            font=("Segoe UI", 10),
-            wraplength=280,
-            justify="left",
-            anchor="w",
-        ).pack(anchor="w", fill="x")
 
     def _make_shell_card(self, parent: tk.Widget, bg: str) -> tk.Frame:
         return tk.Frame(
@@ -679,33 +716,109 @@ class NovaAIGui:
             font=("Bahnschrift SemiBold", 10),
         )
 
-    def _make_info_block(
-        self,
-        parent: tk.Widget,
-        heading: str,
-        value: tk.StringVar,
-    ) -> None:
-        block = tk.Frame(parent, bg=parent.cget("bg"))
-        block.pack(fill="x", pady=(0, 14))
+    def refresh_audio_devices(self) -> None:
+        self._refresh_audio_device_choices(silent=False)
 
-        tk.Label(
-            block,
-            text=heading.upper(),
-            bg=parent.cget("bg"),
-            fg=PALETTE["muted_soft"],
-            font=("Bahnschrift SemiBold", 9),
-        ).pack(anchor="w")
+    def _refresh_audio_device_choices(self, silent: bool) -> None:
+        max_choices = 18
 
-        tk.Label(
-            block,
-            textvariable=value,
-            bg=parent.cget("bg"),
-            fg=PALETTE["muted"],
-            font=("Segoe UI", 10),
-            justify="left",
-            anchor="w",
-            wraplength=280,
-        ).pack(anchor="w", fill="x", pady=(5, 0))
+        previous_mic_index = self.config.mic_device_index
+        previous_speaker_index = self.config.speaker_device_index
+
+        try:
+            microphones = list_input_devices_compact(max_devices=max_choices)
+            speakers = list_output_devices_compact(max_devices=max_choices)
+        except RuntimeError as exc:
+            if not silent:
+                self._set_status_text(f"Could not refresh devices: {exc}")
+            return
+
+        mic_map: dict[str, int | None] = {"System default microphone": None}
+        for device in microphones:
+            label = device["name"]
+            if device["is_default"]:
+                label += " (default)"
+            if label in mic_map:
+                label = f"{label}  #{device['index']}"
+            mic_map[label] = device["index"]
+
+        speaker_map: dict[str, int | None] = {"System default speaker": None}
+        for device in speakers:
+            label = device["name"]
+            if device["is_default"]:
+                label += " (default)"
+            if label in speaker_map:
+                label = f"{label}  #{device['index']}"
+            speaker_map[label] = device["index"]
+
+        self.mic_choice_map = mic_map
+        self.speaker_choice_map = speaker_map
+        self.mic_selector.configure(values=list(mic_map.keys()))
+        self.speaker_selector.configure(values=list(speaker_map.keys()))
+
+        mic_label = next(
+            (label for label, index in mic_map.items() if index == previous_mic_index),
+            None,
+        )
+        if mic_label is None:
+            if previous_mic_index is None:
+                mic_label = "System default microphone"
+            else:
+                mic_label = f"Custom microphone #{previous_mic_index}"
+                self.mic_choice_map[mic_label] = previous_mic_index
+                self.mic_selector.configure(values=list(self.mic_choice_map.keys()))
+        self.mic_select_text.set(mic_label)
+
+        speaker_label = next(
+            (
+                label
+                for label, index in speaker_map.items()
+                if index == previous_speaker_index
+            ),
+            None,
+        )
+        if speaker_label is None:
+            if previous_speaker_index is None:
+                speaker_label = "System default speaker"
+            else:
+                speaker_label = f"Custom speaker #{previous_speaker_index}"
+                self.speaker_choice_map[speaker_label] = previous_speaker_index
+                self.speaker_selector.configure(
+                    values=list(self.speaker_choice_map.keys())
+                )
+        self.speaker_select_text.set(speaker_label)
+
+        if not silent:
+            self._set_status_text(
+                f"Audio devices refreshed ({len(microphones)} mics, {len(speakers)} speakers)."
+            )
+
+    def _on_mic_selected(self, _event: object) -> None:
+        selected = self.mic_select_text.get()
+        if selected not in self.mic_choice_map:
+            return
+
+        new_index = self.mic_choice_map[selected]
+        if self.config.mic_device_index == new_index:
+            return
+
+        self.config.mic_device_index = new_index
+        self.state.speech_recognizer = None
+        self.state.speech_recognizer_signature = None
+        self.state.mic_calibrated = False
+        self._set_status_text(f"Microphone set to {selected}.")
+
+    def _on_speaker_selected(self, _event: object) -> None:
+        selected = self.speaker_select_text.get()
+        if selected not in self.speaker_choice_map:
+            return
+
+        new_index = self.speaker_choice_map[selected]
+        if self.config.speaker_device_index == new_index:
+            return
+
+        self.config.speaker_device_index = new_index
+        self._set_status_text(f"Speaker set to {selected}.")
 
     def _make_control_tile(
         self,
@@ -900,36 +1013,11 @@ class NovaAIGui:
 
     def _refresh_summary_labels(self) -> None:
         companion_name = self.profile.get("companion_name", "NovaAI")
-        user_name = self.profile.get("user_name", "You")
-
         self.hero_subtitle_text.set(
-            f"Model {self.config.model}  |  "
-            f"STT {describe_stt_backend(self.config)}  |  "
-            f"XTTS {describe_tts_voice(self.config)} on {get_xtts_device(self.config)}"
+            "A focused control deck for chat and voice. Advanced diagnostics are printed in console."
         )
 
-        self.profile_text.set(f"Companion: {companion_name}\nUser: {user_name}")
-        self.performance_text.set(
-            f"{self.config.performance_profile} profile\n"
-            f"{self.config.system_summary}\n"
-            f"Reply budget: {self.config.ollama_num_predict}"
-        )
-        self.mic_text.set(
-            f"{describe_selected_microphone(self.config)}\n"
-            f"{describe_stt_backend(self.config)}"
-        )
-        self.voice_text.set(
-            f"{describe_tts_voice(self.config)} on {get_xtts_device(self.config)}\n"
-            f"Streaming {'on' if self.config.xtts_stream_output else 'off'} at {self.config.xtts_speed:.2f}x"
-        )
-        self.mode_text.set(
-            f"{'Session started' if self.session_started else 'Waiting for start'}\n"
-            f"{'Hands-free active' if self.hands_free_enabled else 'Manual input'}\n"
-            f"Voice replies {'on' if self.state.voice_enabled else 'off'}\n"
-            f"Mic {'muted' if self.mic_muted else 'live'}"
-        )
-
-        self.model_badge_text.set(f"Model {self.config.model}")
+        self.model_badge_text.set("NovaAI")
         self.mode_badge_text.set(
             (
                 "Hands-free active"
@@ -1009,6 +1097,7 @@ class NovaAIGui:
         session_active = self.session_started
         interaction_enabled = session_active and not busy
         send_state = "normal" if interaction_enabled else "disabled"
+        selector_state = "disabled" if busy else "readonly"
 
         self.send_button.configure(
             state=send_state,
@@ -1022,6 +1111,12 @@ class NovaAIGui:
             bg=PALETTE["input"] if interaction_enabled else PALETTE["card_alt"],
             disabledbackground=PALETTE["card_alt"],
             disabledforeground=PALETTE["muted_soft"],
+        )
+        self.mic_selector.configure(state=selector_state)
+        self.speaker_selector.configure(state=selector_state)
+        self.refresh_devices_button.configure(
+            state="disabled" if busy else "normal",
+            cursor="arrow" if busy else "hand2",
         )
 
         self._configure_tile(
@@ -1364,7 +1459,7 @@ class NovaAIGui:
             self._safe_ui(lambda: self._set_status_text("Speaking the reply..."))
             audio_path = speak_text(reply, self.config, self.state)
             if not self.config.xtts_stream_output:
-                play_audio_file(audio_path)
+                play_audio_file(audio_path, self.config.speaker_device_index)
 
         if from_voice and self.hands_free_enabled and not self.mic_muted:
             return "Reply finished. Hands-free will listen again."
@@ -1441,10 +1536,16 @@ class NovaAIGui:
             f"Reply limit: {self.config.ollama_num_predict}",
             f"STT: {describe_stt_backend(self.config)}",
             f"XTTS: {get_xtts_device(self.config)} at speed {self.config.xtts_speed:.2f}",
+            f"Mic: {describe_selected_microphone(self.config)}",
+            f"Speaker: {describe_selected_speaker(self.config)}",
         ]
         lines.extend(self.config.performance_notes)
-        self._append_system_message("\n".join(lines))
-        self._set_status_text("Performance summary posted.")
+        print()
+        print("[NovaAI GUI] Runtime diagnostics")
+        for line in lines:
+            print(f"[NovaAI GUI] {line}")
+        print()
+        self._set_status_text("Diagnostics printed to console.")
 
     def clear_history(self) -> None:
         if self.busy:

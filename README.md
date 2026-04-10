@@ -150,6 +150,7 @@ NovaAI/
 - `STT_USE_GPU`: manual fallback if auto-tune is disabled
 - `STT_MODEL`: faster-whisper model size, such as `small.en` or `medium.en`
 - `MIC_DEVICE_INDEX`: manually pin a microphone from `/mics`
+- `SPEAKER_DEVICE_INDEX`: pin a specific speaker/output device for playback
 
 ## Notes
 

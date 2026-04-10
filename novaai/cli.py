@@ -450,7 +450,7 @@ def main() -> None:
             try:
                 audio_path = speak_text(reply, config, state)
                 if not config.xtts_stream_output:
-                    play_audio_file(audio_path)
+                    play_audio_file(audio_path, config.speaker_device_index)
             except Exception as exc:
                 latest_path = audio_path or "audio/latest_reply.wav"
                 print(
