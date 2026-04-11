@@ -1,13 +1,14 @@
 # NovaAI
 
-NovaAI is a local voice companion built on Ollama, faster-whisper, and XTTS-v2.
+NovaAI is a voice companion built around pluggable chat providers, faster-whisper, and XTTS-v2.
 It can listen through your microphone, reply in text, speak back with streamed audio, and now run in either a terminal or a desktop GUI.
 
 ## Features
 
-- Local Ollama chat with persistent recent history
+- Chat via Ollama or OpenAI-compatible endpoints such as OpenAI, LM Studio, and LiteLLM
 - Optional web browsing support (manual `/web <query>` or auto-search mode)
   - Web lookups now include short excerpts pulled from top result pages for more grounded answers.
+  - Search backend is switchable between `searxng` and `duckduckgo`.
 - Microphone input with `SpeechRecognition` and local `faster-whisper`
 - XTTS-v2 voice output with streamed playback
 - Desktop GUI with left-side tabs (`Main`, `Chat`, `Profiles`, `Settings`)
@@ -15,7 +16,7 @@ It can listen through your microphone, reply in text, speak back with streamed a
 - Startup auto-tuning based on CPU, RAM, and CUDA GPU capability
 - GitHub-backed version file plus optional startup auto-update
 - Configurable companion profiles with rich metadata, behavior rules, and memory sections
-- Windows-friendly setup with `setup.bat` that can install Python 3.11, Ollama, and the default model for you
+- Windows-friendly setup with `setup.bat` that can install Python 3.11, Ollama, and the default Ollama model for you
 - Modular Python package layout so contributors can work on one area at a time
 
 ## Quick Start
@@ -38,7 +39,7 @@ It can listen through your microphone, reply in text, speak back with streamed a
 .\.venv\Scripts\python.exe app.py
 ```
 
-If Python 3.11 or Ollama are missing, `setup.bat` uses `winget` to install them first and accepts the required `winget` source/package agreements automatically. It also creates `.env`, seeds `data/profile.json`, starts Ollama, pulls the model from `OLLAMA_MODEL`, and preloads the faster-whisper and XTTS model files so the first app launch is less annoying. On first app launch, NovaAI migrates to a multi-profile store at `data/profiles.json`.
+If Python 3.11 or Ollama are missing, `setup.bat` uses `winget` to install them first and accepts the required `winget` source/package agreements automatically. It also creates `.env`, seeds `data/profile.json`, starts Ollama, pulls the default Ollama model, and preloads the faster-whisper and XTTS model files so the first app launch is less annoying. On first app launch, NovaAI migrates to a multi-profile store at `data/profiles.json`.
 
 When `AUTO_UPDATE_CHECK=true`, NovaAI compares your local `VERSION` file to the latest `VERSION` on GitHub during startup. If `AUTO_UPDATE_INSTALL=true` too, clean non-git installs update themselves automatically and then restart.
 
@@ -95,7 +96,7 @@ NovaAI/
 
 - `novaai/config.py`: environment parsing and runtime configuration
 - `novaai/storage.py`: multi-profile store, active profile switching, and history loading/saving
-- `novaai/chat.py`: system prompt construction and Ollama requests
+- `novaai/chat.py`: system prompt construction and provider-specific chat requests
 - `novaai/audio_input.py`: microphone capture, STT, and mic calibration
 - `novaai/tts.py`: XTTS generation, streamed playback, and WAV output
 - `novaai/gui.py`: desktop chat window, hands-free controls, and mic mute
@@ -174,10 +175,15 @@ Natural lookup also works for general topics like "can you search RTX 5090 price
 - `HF_HUB_DISABLE_SYMLINKS_WARNING`: suppress the Windows symlink cache warning from Hugging Face
 - `NOVA_GITHUB_REPO`: override the GitHub repo slug used for update checks
 - `NOVA_GITHUB_BRANCH`: override the GitHub branch used for update checks
-- `OLLAMA_MODEL`: the Ollama chat model name
-- `OLLAMA_NUM_PREDICT`: reply token budget
+- `LLM_PROVIDER`: `ollama` or `openai` (`openai` also covers OpenAI-compatible servers like LM Studio and LiteLLM)
+- `LLM_MODEL`: chat model name
+- `LLM_API_URL`: custom chat endpoint URL; leave blank to use the provider default
+- `LLM_API_KEY`: API key for OpenAI or compatible hosted endpoints
+- `LLM_NUM_PREDICT`: reply token budget
 - `WEB_BROWSING_ENABLED`: enable web search features
 - `WEB_AUTO_SEARCH`: automatically search for likely web/current-event prompts
+- `WEB_SEARCH_PROVIDER`: search backend, currently `searxng` or `duckduckgo`
+- `WEB_SEARCH_URL`: optional SearXNG `/search` endpoint, defaulting to `https://searxng.nekosunevr.co.uk/`
 - `WEB_MAX_RESULTS`: number of search results to attach per lookup
 - `WEB_TIMEOUT_SECONDS`: timeout for web search requests
 - `WEB_REGION`: region code for web results (for example, `us-en`)

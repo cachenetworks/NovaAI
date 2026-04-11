@@ -69,7 +69,7 @@
             "support voice-based interaction"
           ],
           "tooling_stack": [
-            "ollama",
+            "pluggable-chat-provider",
             "faster-whisper",
             "xtts-v2"
           ],

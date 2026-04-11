@@ -15,6 +15,19 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _load_json_with_fallback_encodings(path: Any) -> Any:
+    last_error: UnicodeDecodeError | json.JSONDecodeError | None = None
+    for encoding in ("utf-8", "cp1252"):
+        try:
+            with path.open("r", encoding=encoding) as source_file:
+                return json.load(source_file)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Failed to load JSON from {path}.")
+
+
 def _safe_profile_id(value: str) -> str:
     lowered = value.strip().lower()
     cleaned = "".join(
@@ -140,8 +153,7 @@ def load_profile_store() -> dict[str, Any]:
 
     if not PROFILES_PATH.exists():
         if PROFILE_PATH.exists():
-            with PROFILE_PATH.open("r", encoding="utf-8") as legacy_profile_file:
-                legacy_profile = json.load(legacy_profile_file)
+            legacy_profile = _load_json_with_fallback_encodings(PROFILE_PATH)
             normalized_legacy = _normalize_profile(legacy_profile)
             store = {
                 "schema_version": PROFILE_STORE_SCHEMA_VERSION,

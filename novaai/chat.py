@@ -331,6 +331,134 @@ def _build_web_fallback_reply(user_text: str, web_context: str) -> str | None:
     return reply
 
 
+def _extract_openai_text(message_content: Any) -> str:
+    if isinstance(message_content, str):
+        return message_content.strip()
+    if isinstance(message_content, list):
+        parts: list[str] = []
+        for item in message_content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text":
+                text_value = item.get("text")
+                if isinstance(text_value, str) and text_value.strip():
+                    parts.append(text_value.strip())
+        return "\n".join(parts).strip()
+    return ""
+
+
+def _request_ollama_reply(
+    user_text: str,
+    config: Config,
+    payload: dict[str, Any],
+    web_context: str | None,
+) -> str:
+    try:
+        response = requests.post(
+            config.llm_api_url,
+            json=payload,
+            timeout=config.request_timeout,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            "I could not reach Ollama. Install/start Ollama, make sure the server is "
+            "running, and confirm the Ollama API URL is correct."
+        ) from exc
+
+    detail = ""
+    try:
+        detail = response.json().get("error", "")
+    except ValueError:
+        detail = response.text.strip()
+
+    if response.status_code >= 400:
+        if "not found" in detail.lower():
+            raise RuntimeError(
+                f"Ollama could not find the model '{config.model}'. "
+                f"After installing Ollama, run: ollama pull {config.model}"
+            )
+        raise RuntimeError(
+            f"Ollama returned HTTP {response.status_code}. {detail or 'No error details were returned.'}"
+        )
+
+    try:
+        data = response.json()
+        reply = data["message"]["content"].strip()
+        if web_context and _contains_placeholder_markup(reply):
+            fallback_reply = _build_web_fallback_reply(user_text, web_context)
+            if fallback_reply:
+                reply = fallback_reply
+        return _strip_links_from_reply(reply)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError("Ollama returned an unexpected response format.") from exc
+
+
+def _request_openai_compatible_reply(
+    user_text: str,
+    config: Config,
+    messages: list[dict[str, str]],
+    web_context: str | None,
+) -> str:
+    payload: dict[str, Any] = {
+        "model": config.model,
+        "messages": messages,
+        "temperature": config.temperature,
+        "max_tokens": config.llm_num_predict,
+    }
+    headers = {"Content-Type": "application/json"}
+    if config.llm_api_key:
+        headers["Authorization"] = f"Bearer {config.llm_api_key}"
+
+    try:
+        response = requests.post(
+            config.llm_api_url,
+            json=payload,
+            headers=headers,
+            timeout=config.request_timeout,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            "I could not reach the OpenAI-compatible endpoint. Check the provider, "
+            "API URL, and API key."
+        ) from exc
+
+    detail = ""
+    try:
+        body = response.json()
+        detail = (
+            body.get("error", {}).get("message")
+            if isinstance(body.get("error"), dict)
+            else body.get("error", "")
+        ) or ""
+    except ValueError:
+        body = None
+        detail = response.text.strip()
+
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"OpenAI-compatible endpoint returned HTTP {response.status_code}. "
+            f"{detail or 'No error details were returned.'}"
+        )
+
+    try:
+        if body is None:
+            body = response.json()
+        choices = body["choices"]
+        message = choices[0]["message"]
+        reply = _extract_openai_text(message.get("content", ""))
+        if not reply:
+            raise KeyError("choices[0].message.content")
+        if web_context and _contains_placeholder_markup(reply):
+            fallback_reply = _build_web_fallback_reply(user_text, web_context)
+            if fallback_reply:
+                reply = fallback_reply
+        return _strip_links_from_reply(reply)
+    except (ValueError, KeyError, TypeError, IndexError) as exc:
+        raise RuntimeError(
+            "The OpenAI-compatible endpoint returned an unexpected response format."
+        ) from exc
+
+
 def request_reply(
     user_text: str,
     profile: dict[str, Any],
@@ -357,53 +485,17 @@ def request_reply(
         messages.append({"role": "system", "content": web_context})
     messages.append({"role": "user", "content": user_text})
 
-    payload = {
-        "model": config.model,
-        "messages": messages,
-        "stream": False,
-        "keep_alive": config.ollama_keep_alive,
-        "options": {
-            "temperature": config.temperature,
-            "num_predict": config.ollama_num_predict,
-        },
-    }
+    if config.llm_provider == "ollama":
+        payload = {
+            "model": config.model,
+            "messages": messages,
+            "stream": False,
+            "keep_alive": config.llm_keep_alive,
+            "options": {
+                "temperature": config.temperature,
+                "num_predict": config.llm_num_predict,
+            },
+        }
+        return _request_ollama_reply(user_text, config, payload, web_context)
 
-    try:
-        response = requests.post(
-            config.ollama_api_url,
-            json=payload,
-            timeout=config.request_timeout,
-        )
-    except requests.RequestException as exc:
-        raise RuntimeError(
-            "I could not reach Ollama. Install/start Ollama, make sure the server is "
-            "running, and confirm OLLAMA_API_URL is correct."
-        ) from exc
-
-    detail = ""
-    try:
-        detail = response.json().get("error", "")
-    except ValueError:
-        detail = response.text.strip()
-
-    if response.status_code >= 400:
-        if "not found" in detail.lower():
-            raise RuntimeError(
-                f"Ollama could not find the model '{config.model}'. "
-                f"After installing Ollama, run: ollama pull {config.model}"
-            )
-        raise RuntimeError(
-            f"Ollama returned HTTP {response.status_code}. {detail or 'No error details were returned.'}"
-        )
-
-    try:
-        data = response.json()
-        reply = data["message"]["content"].strip()
-        if web_context and _contains_placeholder_markup(reply):
-            fallback_reply = _build_web_fallback_reply(user_text, web_context)
-            if fallback_reply:
-                reply = fallback_reply
-        reply = _strip_links_from_reply(reply)
-        return reply
-    except (ValueError, KeyError, TypeError) as exc:
-        raise RuntimeError("Ollama returned an unexpected response format.") from exc
+    return _request_openai_compatible_reply(user_text, config, messages, web_context)

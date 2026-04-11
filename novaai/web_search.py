@@ -184,7 +184,7 @@ def _load_ddgs_client() -> type:
             from ddgs import DDGS
         except ImportError as exc:
             raise RuntimeError(
-                "Web browsing requires the 'duckduckgo-search' package. "
+                "DuckDuckGo search requires the 'duckduckgo-search' package. "
                 "Run: pip install duckduckgo-search"
             ) from exc
     return DDGS
@@ -280,17 +280,17 @@ def _is_recency_focused_query(query: str) -> bool:
     return any(token in lowered for token in RECENCY_TOKENS)
 
 
-def _infer_timelimit(query: str) -> str | None:
+def _infer_time_range(query: str) -> str | None:
     if _has_explicit_year(query):
         return None
 
     lowered = query.lower()
     if any(token in lowered for token in ("today", "tonight", "tomorrow", "right now", "live")):
-        return "d"
+        return "day"
     if any(token in lowered for token in ("weather", "forecast", "score", "stocks", "crypto", "price")):
-        return "w"
+        return "week"
     if _is_recency_focused_query(query):
-        return "m"
+        return "month"
     return None
 
 
@@ -439,31 +439,133 @@ def _rerank_results_for_recency(
     return sorted(records, key=sort_key, reverse=True)
 
 
-def search_web(
+def _searxng_language(region: str) -> str:
+    normalized = region.strip().lower()
+    mapping = {
+        "us-en": "en-US",
+        "uk-en": "en-GB",
+        "gb-en": "en-GB",
+        "en-us": "en-US",
+        "en-gb": "en-GB",
+        "all": "all",
+    }
+    return mapping.get(normalized, region or "en-US")
+
+
+def _searxng_safesearch(value: str) -> int:
+    normalized = value.strip().lower()
+    if normalized == "off":
+        return 0
+    if normalized in {"strict", "high"}:
+        return 2
+    return 1
+
+
+def _search_web_via_searxng(
     query: str,
     *,
-    max_results: int,
-    timeout_seconds: int,
-    region: str,
-    safesearch: str,
+    config: Config,
+) -> list[dict[str, str]]:
+    normalized_query = " ".join(query.strip().split())
+    if not normalized_query:
+        raise RuntimeError("Please provide a web search query after /web.")
+
+    limit = max(1, min(config.web_max_results, 10))
+    effective_query = _expand_query_for_recency(normalized_query)
+    params = {
+        "q": effective_query,
+        "format": "json",
+        "language": _searxng_language(config.web_region),
+        "safesearch": _searxng_safesearch(config.web_safesearch),
+    }
+    time_range = _infer_time_range(normalized_query)
+    if time_range:
+        params["time_range"] = time_range
+
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "NovaAI/1.0 (+https://github.com/)",
+    }
+
+    try:
+        response = requests.get(
+            config.web_search_url,
+            params=params,
+            headers=headers,
+            timeout=config.web_timeout_seconds,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"SearXNG request failed for {config.web_search_url}: {exc}"
+        ) from exc
+
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"SearXNG returned HTTP {response.status_code} from {config.web_search_url}."
+        )
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"SearXNG returned invalid JSON from {config.web_search_url}."
+        ) from exc
+
+    raw_results = payload.get("results")
+    if not isinstance(raw_results, list):
+        return []
+
+    records: list[dict[str, str]] = []
+    for raw in raw_results:
+        if not isinstance(raw, dict):
+            continue
+        url = _clean_text(raw.get("url"), "")
+        if not url:
+            continue
+        title = _clean_text(raw.get("title"), "Untitled result")
+        snippet = _clean_text(
+            raw.get("content") or raw.get("snippet"),
+            "No snippet provided.",
+        )
+        records.append({"title": title, "url": url, "snippet": snippet})
+        if len(records) >= max(limit, min(12, limit * 2)):
+            break
+
+    if records:
+        _enrich_results_with_page_excerpts(records, config.web_timeout_seconds)
+        records = _rerank_results_for_recency(records, normalized_query)
+        records = records[:limit]
+    return records
+
+
+def _search_web_via_duckduckgo(
+    query: str,
+    *,
+    config: Config,
 ) -> list[dict[str, str]]:
     normalized_query = " ".join(query.strip().split())
     if not normalized_query:
         raise RuntimeError("Please provide a web search query after /web.")
 
     DDGS = _load_ddgs_client()
-    limit = max(1, min(max_results, 10))
-    timelimit = _infer_timelimit(normalized_query)
+    limit = max(1, min(config.web_max_results, 10))
+    timelimit_map = {
+        "day": "d",
+        "week": "w",
+        "month": "m",
+    }
+    time_range = _infer_time_range(normalized_query)
+    timelimit = timelimit_map.get(time_range or "")
     effective_query = _expand_query_for_recency(normalized_query)
     records: list[dict[str, str]] = []
 
     try:
         with _suppress_native_output():
-            with DDGS(timeout=timeout_seconds) as client:
+            with DDGS(timeout=config.web_timeout_seconds) as client:
                 raw_results = client.text(
                     effective_query,
-                    region=region,
-                    safesearch=safesearch,
+                    region=config.web_region,
+                    safesearch=config.web_safesearch,
                     timelimit=timelimit,
                     backend="html",
                     max_results=max(limit, min(12, limit * 2)),
@@ -471,10 +573,7 @@ def search_web(
             for raw in raw_results or []:
                 if not isinstance(raw, dict):
                     continue
-                url = _clean_text(
-                    raw.get("href") or raw.get("url"),
-                    "",
-                )
+                url = _clean_text(raw.get("href") or raw.get("url"), "")
                 if not url:
                     continue
                 title = _clean_text(raw.get("title"), "Untitled result")
@@ -485,17 +584,24 @@ def search_web(
                 records.append({"title": title, "url": url, "snippet": snippet})
                 if len(records) >= max(limit, min(12, limit * 2)):
                     break
-            if records:
-                _enrich_results_with_page_excerpts(
-                    records,
-                    timeout_seconds=timeout_seconds,
-                )
-                records = _rerank_results_for_recency(records, normalized_query)
-                records = records[:limit]
     except Exception as exc:
-        raise RuntimeError(f"Web search failed: {exc}") from exc
+        raise RuntimeError(f"DuckDuckGo search failed: {exc}") from exc
 
+    if records:
+        _enrich_results_with_page_excerpts(records, config.web_timeout_seconds)
+        records = _rerank_results_for_recency(records, normalized_query)
+        records = records[:limit]
     return records
+
+
+def search_web(query: str, config: Config) -> list[dict[str, str]]:
+    if config.web_search_provider == "searxng":
+        return _search_web_via_searxng(query, config=config)
+    if config.web_search_provider == "duckduckgo":
+        return _search_web_via_duckduckgo(query, config=config)
+    raise RuntimeError(
+        f"Unsupported web search provider '{config.web_search_provider}'."
+    )
 
 
 def should_auto_search(user_text: str) -> bool:
@@ -603,7 +709,7 @@ def extract_web_query_from_request(user_text: str) -> str | None:
     return stripped or None
 
 
-def build_web_context(query: str, results: list[dict[str, str]]) -> str:
+def build_web_context(query: str, results: list[dict[str, str]], config: Config) -> str:
     if not results:
         return (
             "Web context is unavailable right now. "
@@ -612,6 +718,7 @@ def build_web_context(query: str, results: list[dict[str, str]]) -> str:
 
     lines = [
         "Fresh web context for the next answer:",
+        f"Search provider: {config.web_search_provider}",
         f"Search query: {query}",
         "Results:",
     ]
@@ -634,17 +741,11 @@ def build_web_context(query: str, results: list[dict[str, str]]) -> str:
 
 
 def fetch_web_context(query: str, config: Config) -> WebContextBundle:
-    results = search_web(
-        query,
-        max_results=config.web_max_results,
-        timeout_seconds=config.web_timeout_seconds,
-        region=config.web_region,
-        safesearch=config.web_safesearch,
-    )
+    results = search_web(query, config)
     if not results:
         raise RuntimeError("No web results were returned for that query.")
     return WebContextBundle(
         query=query,
-        context=build_web_context(query, results),
+        context=build_web_context(query, results, config),
         result_count=len(results),
     )

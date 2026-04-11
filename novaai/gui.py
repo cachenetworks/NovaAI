@@ -227,7 +227,7 @@ class NovaAIGui:
         print(f"[NovaAI GUI] Companion: {companion_name} | User: {user_name}")
         print(f"[NovaAI GUI] Active profile id: {self.active_profile_id}")
         print(
-            f"[NovaAI GUI] Model: {self.config.model} | "
+            f"[NovaAI GUI] Provider: {self.config.llm_provider} | Model: {self.config.model} | "
             f"Profile: {self.config.performance_profile} | "
             f"Hardware: {self.config.system_summary}"
         )
@@ -242,6 +242,7 @@ class NovaAIGui:
         print(
             f"[NovaAI GUI] Web: {'on' if self.config.web_browsing_enabled else 'off'} | "
             f"Auto: {'on' if self.config.web_auto_search else 'off'} | "
+            f"Provider: {self.config.web_search_provider} | "
             f"Max results: {self.config.web_max_results}"
         )
         print()
@@ -2194,10 +2195,12 @@ class NovaAIGui:
         companion_name = self.profile.get("companion_name", "NovaAI")
         profile_name = self.profile.get("profile_name", "Active Profile")
         self.hero_subtitle_text.set(
-            f"Active profile: {profile_name}. Use the Profiles tab for deep JSON customization."
+            f"Active profile: {profile_name}. Provider: {self.config.llm_provider}. Use the Profiles tab for deep JSON customization."
         )
 
-        self.model_badge_text.set("NovaAI")
+        self.model_badge_text.set(
+            f"{self.config.llm_provider.title()} | {self.config.model}"
+        )
         self.mode_badge_text.set(
             (
                 "Hands-free active"
@@ -2610,6 +2613,7 @@ class NovaAIGui:
             "Web browsing: "
             f"{'on' if self.config.web_browsing_enabled else 'off'} | "
             f"Auto-search: {'on' if self.config.web_auto_search else 'off'} | "
+            f"Provider: {self.config.web_search_provider} | "
             f"Max results: {self.config.web_max_results} | "
             f"Timeout: {self.config.web_timeout_seconds}s | "
             f"Region: {self.config.web_region} | "
@@ -2881,7 +2885,9 @@ class NovaAIGui:
             f"Performance profile: {self.config.performance_profile}",
             f"Auto-tune: {'on' if self.config.auto_tune_performance else 'off'} ({self.config.auto_tune_goal})",
             f"Hardware: {self.config.system_summary}",
-            f"Reply limit: {self.config.ollama_num_predict}",
+            f"Provider: {self.config.llm_provider}",
+            f"Endpoint: {self.config.llm_api_url}",
+            f"Reply limit: {self.config.llm_num_predict}",
             f"STT: {describe_stt_backend(self.config)}",
             f"XTTS: {get_xtts_device(self.config)} at speed {self.config.xtts_speed:.2f}",
             f"Mic: {describe_selected_microphone(self.config)}",

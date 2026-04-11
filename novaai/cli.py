@@ -45,7 +45,7 @@ def print_welcome(profile: dict[str, Any], config: Config, state: SessionState) 
     print()
     print(f"{profile['companion_name']} is ready.")
     print(
-        f"Model: {config.model} | Input: {state.input_mode} | "
+        f"Provider: {config.llm_provider} | Model: {config.model} | Input: {state.input_mode} | "
         f"Voice output: {'on' if state.voice_enabled else 'off'}"
     )
     print(
@@ -59,11 +59,12 @@ def print_welcome(profile: dict[str, Any], config: Config, state: SessionState) 
     print(
         f"XTTS streaming: {'on' if config.xtts_stream_output else 'off'} "
         f"(buffer {config.xtts_stream_buffer_seconds:.1f}s) | "
-        f"Reply limit: {config.ollama_num_predict} tokens"
+        f"Reply limit: {config.llm_num_predict} tokens"
     )
     print(
         f"Web browsing: {'on' if config.web_browsing_enabled else 'off'} | "
         f"Auto-search: {'on' if config.web_auto_search else 'off'} | "
+        f"Provider: {config.web_search_provider} | "
         f"Max results: {config.web_max_results}"
     )
     print(
@@ -134,7 +135,7 @@ def print_performance_summary(config: Config) -> None:
     )
     print(f"Hardware: {config.system_summary}")
     print(
-        f"Active settings: reply limit {config.ollama_num_predict} | "
+        f"Active settings: provider {config.llm_provider} | reply limit {config.llm_num_predict} | "
         f"STT {describe_stt_backend(config)} | "
         f"XTTS {get_xtts_device(config)} at speed {config.xtts_speed:.2f}"
     )
@@ -159,11 +160,14 @@ def print_web_status(config: Config, state: SessionState) -> None:
         "Web browsing: "
         f"{'on' if config.web_browsing_enabled else 'off'} | "
         f"Auto-search: {'on' if config.web_auto_search else 'off'} | "
+        f"Provider: {config.web_search_provider} | "
         f"Max results: {config.web_max_results} | "
         f"Timeout: {config.web_timeout_seconds}s | "
         f"Region: {config.web_region} | "
         f"SafeSearch: {config.web_safesearch}"
     )
+    if config.web_search_provider == "searxng":
+        print(f"SearXNG URL: {config.web_search_url}")
     print(f"Queued web query: {queued_query} | Queued context ready: {queued_status}")
 
 

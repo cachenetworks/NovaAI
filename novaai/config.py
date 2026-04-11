@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -49,6 +50,23 @@ def normalize_stt_provider(value: str) -> str:
     return "faster-whisper"
 
 
+def normalize_llm_provider(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {
+        "openai",
+        "chatgpt",
+        "openai-compatible",
+        "openai_compatible",
+        "custom",
+        "custom-openai",
+        "lmstudio",
+        "lm studio",
+        "litellm",
+    }:
+        return "openai"
+    return "ollama"
+
+
 def normalize_web_safesearch(value: str) -> str:
     normalized = value.strip().lower()
     if normalized in {"off", "none", "disabled"}:
@@ -56,6 +74,51 @@ def normalize_web_safesearch(value: str) -> str:
     if normalized in {"strict", "high"}:
         return "strict"
     return "moderate"
+
+
+def normalize_web_search_provider(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"duckduckgo", "duckduckgo-search", "ddg", "ddgs"}:
+        return "duckduckgo"
+    if normalized in {"searxng", "searx", "searx-ng"}:
+        return "searxng"
+    return "searxng"
+
+
+def resolve_llm_api_url(provider: str, raw_url: str | None) -> str:
+    if provider == "openai":
+        candidate = (raw_url or "https://api.openai.com/v1/chat/completions").strip()
+        parsed = urlparse(candidate)
+        path = parsed.path.rstrip("/")
+        if not path:
+            return candidate.rstrip("/") + "/v1/chat/completions"
+        if path == "/v1":
+            return candidate.rstrip("/") + "/chat/completions"
+        if path.endswith("/chat/completions"):
+            return candidate
+        return candidate
+
+    candidate = (raw_url or "http://127.0.0.1:11434/api/chat").strip()
+    parsed = urlparse(candidate)
+    path = parsed.path.rstrip("/")
+    if not path:
+        return candidate.rstrip("/") + "/api/chat"
+    if path == "/api":
+        return candidate.rstrip("/") + "/chat"
+    return candidate
+
+
+def resolve_web_search_url(provider: str, raw_url: str | None) -> str:
+    if provider == "searxng":
+        candidate = (raw_url or "https://searxng.nekosunevr.co.uk/").strip()
+        parsed = urlparse(candidate)
+        path = parsed.path.rstrip("/")
+        if not path:
+            return candidate.rstrip("/") + "/search"
+        if path.endswith("/search"):
+            return candidate
+        return candidate
+    return (raw_url or "").strip()
 
 
 def parse_input_mode(argument: str) -> str | None:
@@ -74,10 +137,12 @@ class Config:
     performance_profile: str
     performance_notes: tuple[str, ...]
     system_summary: str
+    llm_provider: str
     model: str
-    ollama_api_url: str
-    ollama_keep_alive: str
-    ollama_num_predict: int
+    llm_api_url: str
+    llm_api_key: str | None
+    llm_keep_alive: str
+    llm_num_predict: int
     tts_language: str
     xtts_model_name: str
     xtts_speaker: str
@@ -94,6 +159,8 @@ class Config:
     request_timeout: int
     web_browsing_enabled: bool
     web_auto_search: bool
+    web_search_provider: str
+    web_search_url: str
     web_max_results: int
     web_timeout_seconds: int
     web_region: str
@@ -166,7 +233,7 @@ class Config:
             if performance_profile is not None
             else parse_bool_env("XTTS_USE_GPU", True)
         )
-        ollama_num_predict = (
+        llm_num_predict = (
             performance_profile.ollama_num_predict
             if performance_profile is not None
             else max(48, int(os.getenv("OLLAMA_NUM_PREDICT", "1200")))
@@ -220,6 +287,27 @@ class Config:
             else int(os.getenv("MIC_CHUNK_SIZE", "1024"))
         )
 
+        llm_provider = normalize_llm_provider(
+            os.getenv("LLM_PROVIDER", os.getenv("CHAT_PROVIDER", "ollama"))
+        )
+        llm_api_url = resolve_llm_api_url(
+            llm_provider,
+            parse_optional_str_env("LLM_API_URL")
+            or (
+                parse_optional_str_env("OPENAI_API_URL")
+                if llm_provider == "openai"
+                else parse_optional_str_env("OLLAMA_API_URL")
+            ),
+        )
+        web_search_provider = normalize_web_search_provider(
+            os.getenv("WEB_SEARCH_PROVIDER", "searxng")
+        )
+        web_search_url = resolve_web_search_url(
+            web_search_provider,
+            parse_optional_str_env("WEB_SEARCH_URL")
+            or parse_optional_str_env("SEARXNG_URL"),
+        )
+
         return cls(
             auto_tune_performance=auto_tune_performance,
             auto_tune_goal=auto_tune_goal,
@@ -234,12 +322,22 @@ class Config:
                 )
             ),
             system_summary=describe_system_capabilities(capabilities),
-            model=os.getenv("OLLAMA_MODEL", "dolphin3"),
-            ollama_api_url=os.getenv(
-                "OLLAMA_API_URL", "http://127.0.0.1:11434/api/chat"
+            llm_provider=llm_provider,
+            model=(
+                parse_optional_str_env("LLM_MODEL")
+                or parse_optional_str_env("OPENAI_MODEL")
+                or os.getenv("OLLAMA_MODEL", "dolphin3")
             ),
-            ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
-            ollama_num_predict=ollama_num_predict,
+            llm_api_url=llm_api_url,
+            llm_api_key=(
+                parse_optional_str_env("LLM_API_KEY")
+                or parse_optional_str_env("OPENAI_API_KEY")
+            ),
+            llm_keep_alive=(
+                parse_optional_str_env("LLM_KEEP_ALIVE")
+                or os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+            ),
+            llm_num_predict=llm_num_predict,
             tts_language=os.getenv("XTTS_LANGUAGE")
             or os.getenv("TTS_LANG")
             or os.getenv("STT_LANGUAGE", "en"),
@@ -257,10 +355,17 @@ class Config:
             xtts_max_text_chars=xtts_max_text_chars,
             xtts_speed=xtts_speed,
             history_turns=int(os.getenv("HISTORY_TURNS", "10")),
-            temperature=float(os.getenv("OLLAMA_TEMPERATURE", "0.95")),
+            temperature=float(
+                os.getenv(
+                    "LLM_TEMPERATURE",
+                    os.getenv("OPENAI_TEMPERATURE", os.getenv("OLLAMA_TEMPERATURE", "0.95")),
+                )
+            ),
             request_timeout=request_timeout,
             web_browsing_enabled=parse_bool_env("WEB_BROWSING_ENABLED", True),
             web_auto_search=parse_bool_env("WEB_AUTO_SEARCH", False),
+            web_search_provider=web_search_provider,
+            web_search_url=web_search_url,
             web_max_results=max(1, min(10, int(os.getenv("WEB_MAX_RESULTS", "5")))),
             web_timeout_seconds=max(5, int(os.getenv("WEB_TIMEOUT_SECONDS", "15"))),
             web_region=os.getenv("WEB_REGION", "us-en").strip() or "us-en",
