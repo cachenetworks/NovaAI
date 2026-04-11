@@ -2,6 +2,7 @@ coqui-tts>=0.27,<0.28
 python-dotenv>=1.0,<2
 requests>=2.32,<3
 duckduckgo-search>=6,<8
+gTTS>=2.5,<3
 sounddevice>=0.5,<0.6
 SpeechRecognition>=3.16,<4
 faster-whisper>=1.2,<2

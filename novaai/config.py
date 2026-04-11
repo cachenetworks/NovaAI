@@ -85,6 +85,13 @@ def normalize_web_search_provider(value: str) -> str:
     return "searxng"
 
 
+def normalize_tts_provider(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"gtts", "google-tts", "google_tts", "google"}:
+        return "gtts"
+    return "xtts"
+
+
 def resolve_llm_api_url(provider: str, raw_url: str | None) -> str:
     if provider == "openai":
         candidate = (raw_url or "https://api.openai.com/v1/chat/completions").strip()
@@ -143,6 +150,7 @@ class Config:
     llm_api_key: str | None
     llm_keep_alive: str
     llm_num_predict: int
+    tts_provider: str
     tts_language: str
     xtts_model_name: str
     xtts_speaker: str
@@ -307,6 +315,7 @@ class Config:
             parse_optional_str_env("WEB_SEARCH_URL")
             or parse_optional_str_env("SEARXNG_URL"),
         )
+        tts_provider = normalize_tts_provider(os.getenv("TTS_PROVIDER", "xtts"))
 
         return cls(
             auto_tune_performance=auto_tune_performance,
@@ -338,6 +347,7 @@ class Config:
                 or os.getenv("OLLAMA_KEEP_ALIVE", "30m")
             ),
             llm_num_predict=llm_num_predict,
+            tts_provider=tts_provider,
             tts_language=os.getenv("XTTS_LANGUAGE")
             or os.getenv("TTS_LANG")
             or os.getenv("STT_LANGUAGE", "en"),

@@ -35,6 +35,7 @@ from .tts import (
     get_xtts_device,
     list_output_devices_compact,
     play_audio_file,
+    should_play_audio_after_synthesis,
     speak_text,
 )
 from .web_search import (
@@ -233,8 +234,11 @@ class NovaAIGui:
         )
         print(
             f"[NovaAI GUI] STT: {describe_stt_backend(self.config)} | "
-            f"TTS: {describe_tts_voice(self.config)} on {get_xtts_device(self.config)}"
+            f"TTS provider: {self.config.tts_provider} | "
+            f"Voice: {describe_tts_voice(self.config)}"
         )
+        if self.config.tts_provider == "xtts":
+            print(f"[NovaAI GUI] XTTS device: {get_xtts_device(self.config)}")
         print(
             f"[NovaAI GUI] Mic: {describe_selected_microphone(self.config)} | "
             f"Speaker: {describe_selected_speaker(self.config)}"
@@ -2538,6 +2542,23 @@ class NovaAIGui:
             self.toggle_voice_output()
             return
 
+        if lowered == "/tts":
+            self._append_system_message(
+                f"TTS provider is currently {self.config.tts_provider}."
+            )
+            return
+
+        if lowered.startswith("/tts "):
+            choice = lowered[5:].strip()
+            if choice in {"xtts", "gtts"}:
+                self.config.tts_provider = choice
+                self._append_system_message(
+                    f"TTS provider switched to {self.config.tts_provider}."
+                )
+            else:
+                self._append_system_message("Use /tts xtts or /tts gtts.")
+            return
+
         if lowered == "/mode voice":
             if not self.hands_free_enabled:
                 self.toggle_hands_free()
@@ -2595,7 +2616,7 @@ class NovaAIGui:
 
         if lowered == "/help":
             self._append_system_message(
-                "GUI commands: /listen, /ask, /performance, /reset, /voice, /mode voice, "
+                "GUI commands: /listen, /ask, /performance, /reset, /voice, /tts, /tts xtts, /tts gtts, /mode voice, "
                 "/mode text, /recalibrate, /web, /web on, /web off, /web auto on, "
                 "/web auto off, /web clear, /web <query>, /profile, /profiles, "
                 "/profile use <id>. Hotkey: F8 triggers Voice Ask."
@@ -2809,7 +2830,7 @@ class NovaAIGui:
         if self.state.voice_enabled:
             self._safe_ui(lambda: self._set_status_text("Speaking the reply..."))
             audio_path = speak_text(reply, self.config, self.state)
-            if not self.config.xtts_stream_output:
+            if should_play_audio_after_synthesis(self.config):
                 play_audio_file(audio_path, self.config.speaker_device_index)
 
         if from_voice and self.hands_free_enabled and not self.mic_muted:
@@ -2889,7 +2910,12 @@ class NovaAIGui:
             f"Endpoint: {self.config.llm_api_url}",
             f"Reply limit: {self.config.llm_num_predict}",
             f"STT: {describe_stt_backend(self.config)}",
-            f"XTTS: {get_xtts_device(self.config)} at speed {self.config.xtts_speed:.2f}",
+            f"TTS provider: {self.config.tts_provider}",
+            (
+                f"XTTS: {get_xtts_device(self.config)} at speed {self.config.xtts_speed:.2f}"
+                if self.config.tts_provider == "xtts"
+                else f"gTTS language: {self.config.tts_language}"
+            ),
             f"Mic: {describe_selected_microphone(self.config)}",
             f"Speaker: {describe_selected_speaker(self.config)}",
         ]

@@ -11,6 +11,7 @@ It can listen through your microphone, reply in text, speak back with streamed a
   - Search backend is switchable between `searxng` and `duckduckgo`.
 - Microphone input with `SpeechRecognition` and local `faster-whisper`
 - XTTS-v2 voice output with streamed playback
+- Selectable TTS backend: `xtts` (default) or `gtts`
 - Desktop GUI with left-side tabs (`Main`, `Chat`, `Profiles`, `Settings`)
 - Profile manager with create, clone, delete, activate, and advanced JSON editing
 - Startup auto-tuning based on CPU, RAM, and CUDA GPU capability
@@ -98,7 +99,7 @@ NovaAI/
 - `novaai/storage.py`: multi-profile store, active profile switching, and history loading/saving
 - `novaai/chat.py`: system prompt construction and provider-specific chat requests
 - `novaai/audio_input.py`: microphone capture, STT, and mic calibration
-- `novaai/tts.py`: XTTS generation, streamed playback, and WAV output
+- `novaai/tts.py`: XTTS/gTTS generation and playback handling
 - `novaai/gui.py`: desktop chat window, hands-free controls, and mic mute
 - `novaai/launcher.py`: entrypoint that chooses CLI or GUI mode
 - `novaai/performance.py`: hardware detection and startup auto-tuning
@@ -141,8 +142,11 @@ Each profile now supports deep customization sections, including:
 - `/mics` lists available microphone devices
 - `/mic <index>` chooses a microphone
 - `/mic default` switches back to the system default microphone
-- `/speakers` lists built-in XTTS voices
-- `/speaker <name>` switches XTTS voice
+- `/tts` shows the current TTS provider
+- `/tts xtts` switches to XTTS-v2 (default)
+- `/tts gtts` switches to Google gTTS
+- `/speakers` lists built-in XTTS voices (XTTS mode only)
+- `/speaker <name>` switches XTTS voice (XTTS mode only)
 - `/voice` toggles spoken replies on and off
 - `/web` shows web browsing status
 - `/web on` enables web browsing
@@ -180,6 +184,7 @@ Natural lookup also works for general topics like "can you search RTX 5090 price
 - `LLM_API_URL`: custom chat endpoint URL; leave blank to use the provider default
 - `LLM_API_KEY`: API key for OpenAI or compatible hosted endpoints
 - `LLM_NUM_PREDICT`: reply token budget
+- `TTS_PROVIDER`: `xtts` (default) or `gtts`
 - `WEB_BROWSING_ENABLED`: enable web search features
 - `WEB_AUTO_SEARCH`: automatically search for likely web/current-event prompts
 - `WEB_SEARCH_PROVIDER`: search backend, currently `searxng` or `duckduckgo`
@@ -201,6 +206,7 @@ Natural lookup also works for general topics like "can you search RTX 5090 price
 ## Notes
 
 - XTTS-v2 downloads large model files the first time it is used.
+- gTTS does not require local model downloads, but it needs internet access.
 - `faster-whisper` downloads its speech model the first time it is used.
 - `setup.bat` now preloads those model files during setup so most users should not see those downloads on first launch anymore.
 - Auto-update is conservative on purpose. If NovaAI sees a git checkout with local edits, it skips self-updating instead of risking your work.
@@ -208,7 +214,7 @@ Natural lookup also works for general topics like "can you search RTX 5090 price
 - With auto-tune on, NovaAI overrides a few performance-sensitive values at startup so the app matches the current machine better.
 - Auto-tune does not change `XTTS_SPEED`, so voice pace stays consistent across different machines.
 - If you want to lock in your own values, set `AUTO_TUNE_PERFORMANCE=false` in `.env`.
-- Voice output is saved to `audio/latest_reply.wav` even when playback fails.
+- Voice output is saved to `audio/latest_reply.wav` (XTTS) or `audio/latest_reply.mp3` (gTTS) even when playback fails.
 - Runtime data like `.env`, `data/profile.json`, `data/profiles.json`, `data/history.jsonl`, and generated audio are ignored by git.
 
 ## Contributing

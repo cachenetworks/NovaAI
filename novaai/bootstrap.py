@@ -23,7 +23,8 @@ def preload_runtime_assets() -> None:
     if config.stt_provider == "faster-whisper":
         ensure_stt_model(config, state)
 
-    ensure_xtts_model(config, state)
+    if config.tts_provider == "xtts":
+        ensure_xtts_model(config, state)
 
 
 def main() -> None:

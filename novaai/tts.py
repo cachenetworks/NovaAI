@@ -6,6 +6,7 @@ import queue
 import re
 import threading
 import wave
+from io import BytesIO
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,20 @@ from .config import Config
 from .models import SessionState
 from .paths import AUDIO_DIR, ROOT_DIR, XTTS_STREAM_END
 from .utils import console_safe_text
+
+
+def normalize_gtts_language(language: str) -> str:
+    normalized = language.strip().replace("_", "-")
+    if not normalized:
+        return "en"
+    return normalized.split("-", 1)[0].lower()
+
+
+def should_play_audio_after_synthesis(config: Config) -> bool:
+    return not (
+        config.tts_provider == "xtts"
+        and config.xtts_stream_output
+    )
 
 
 def resolve_optional_path(path_value: str | None) -> Path | None:
@@ -488,6 +503,8 @@ def print_xtts_speakers(config: Config, state: SessionState) -> None:
 
 
 def describe_tts_voice(config: Config) -> str:
+    if config.tts_provider == "gtts":
+        return f"gTTS ({normalize_gtts_language(config.tts_language)})"
     speaker_wav = resolve_optional_path(config.xtts_speaker_wav)
     if speaker_wav is not None:
         return f"reference voice file ({speaker_wav})"
@@ -698,6 +715,33 @@ def synthesize_xtts_to_file(
     return write_wav_audio(output_path, audio_chunks, get_xtts_output_sample_rate(model))
 
 
+def synthesize_gtts_to_file(
+    text: str,
+    config: Config,
+    output_path: Path,
+) -> Path:
+    try:
+        from gtts import gTTS
+    except ImportError as exc:
+        raise RuntimeError(
+            "gTTS is not installed. Run: pip install gTTS"
+        ) from exc
+
+    clipped_text = trim_text_for_tts(text, config.xtts_max_text_chars)
+    language = normalize_gtts_language(config.tts_language)
+
+    tts = gTTS(
+        text=clipped_text,
+        lang=language,
+        slow=False,
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    buffer = BytesIO()
+    tts.write_to_fp(buffer)
+    output_path.write_bytes(buffer.getvalue())
+    return output_path
+
+
 def produce_xtts_stream_chunks(
     text: str,
     config: Config,
@@ -838,6 +882,11 @@ def stream_xtts_audio(
 
 def speak_text(text: str, config: Config, state: SessionState) -> Path:
     cleaned_text = trim_text_for_tts(text, config.xtts_max_text_chars)
+
+    if config.tts_provider == "gtts":
+        output_path = AUDIO_DIR / "latest_reply.mp3"
+        return synthesize_gtts_to_file(cleaned_text, config, output_path)
+
     output_path = AUDIO_DIR / "latest_reply.wav"
     model = ensure_xtts_model(config, state)
 

@@ -12,7 +12,7 @@ from .audio_input import (
     resolve_input_device_info,
 )
 from .chat import request_reply
-from .config import Config, parse_input_mode
+from .config import Config, normalize_tts_provider, parse_input_mode
 from .defaults import VOICE_COMMAND_ALIASES
 from .models import CommandResult, SessionState, UserTurn
 from .storage import (
@@ -31,6 +31,7 @@ from .tts import (
     play_audio_file,
     print_xtts_speakers,
     resolve_optional_path,
+    should_play_audio_after_synthesis,
     speak_text,
 )
 from .utils import console_safe_text
@@ -49,18 +50,24 @@ def print_welcome(profile: dict[str, Any], config: Config, state: SessionState) 
         f"Voice output: {'on' if state.voice_enabled else 'off'}"
     )
     print(
-        f"XTTS language: {config.tts_language} | "
+        f"TTS provider: {config.tts_provider} | TTS language: {config.tts_language} | "
         f"Speech recognition: {describe_stt_backend(config)} | "
         f"Language: {config.stt_language}"
     )
-    print(
-        f"XTTS voice: {describe_tts_voice(config)} | XTTS device: {get_xtts_device(config)}"
-    )
-    print(
-        f"XTTS streaming: {'on' if config.xtts_stream_output else 'off'} "
-        f"(buffer {config.xtts_stream_buffer_seconds:.1f}s) | "
-        f"Reply limit: {config.llm_num_predict} tokens"
-    )
+    if config.tts_provider == "xtts":
+        print(
+            f"XTTS voice: {describe_tts_voice(config)} | XTTS device: {get_xtts_device(config)}"
+        )
+        print(
+            f"XTTS streaming: {'on' if config.xtts_stream_output else 'off'} "
+            f"(buffer {config.xtts_stream_buffer_seconds:.1f}s) | "
+            f"Reply limit: {config.llm_num_predict} tokens"
+        )
+    else:
+        print(
+            f"gTTS voice: {describe_tts_voice(config)} | "
+            f"Reply limit: {config.llm_num_predict} tokens"
+        )
     print(
         f"Web browsing: {'on' if config.web_browsing_enabled else 'off'} | "
         f"Auto-search: {'on' if config.web_auto_search else 'off'} | "
@@ -79,7 +86,7 @@ def print_welcome(profile: dict[str, Any], config: Config, state: SessionState) 
     )
     print(
         "Commands: /help, /mode <voice|text>, /listen, /ask, /recalibrate, /mics, "
-        "/mic <index|default>, /speakers, /speaker <name>, /voice [on|off], "
+        "/mic <index|default>, /tts [xtts|gtts], /speakers, /speaker <name>, /voice [on|off], "
         "/web [on|off|auto on|auto off|clear|<query>], "
         "/performance, /profiles, /profile, /profile use <id>, "
         "/name <new name>, /me <your name>, /remember <fact>, "
@@ -101,9 +108,12 @@ def print_help() -> None:
     print("/mic                    Show the selected microphone")
     print("/mic <index>            Choose a microphone from /mics")
     print("/mic default            Use the system default microphone")
-    print("/speakers               List available XTTS built-in voices")
-    print("/speaker                Show the current XTTS voice")
-    print("/speaker <name>         Switch to a different XTTS built-in voice")
+    print("/tts                    Show the current TTS provider")
+    print("/tts xtts               Use XTTS-v2 voice synthesis (default)")
+    print("/tts gtts               Use Google gTTS voice synthesis")
+    print("/speakers               List available XTTS built-in voices (XTTS mode)")
+    print("/speaker                Show the current XTTS voice (XTTS mode)")
+    print("/speaker <name>         Switch XTTS built-in voice (XTTS mode)")
     print("/voice                  Toggle spoken replies on or off")
     print("/voice on               Always speak replies")
     print("/voice off              Stop speaking replies")
@@ -137,8 +147,10 @@ def print_performance_summary(config: Config) -> None:
     print(
         f"Active settings: provider {config.llm_provider} | reply limit {config.llm_num_predict} | "
         f"STT {describe_stt_backend(config)} | "
-        f"XTTS {get_xtts_device(config)} at speed {config.xtts_speed:.2f}"
+        f"TTS {config.tts_provider}"
     )
+    if config.tts_provider == "xtts":
+        print(f"XTTS device: {get_xtts_device(config)} at speed {config.xtts_speed:.2f}")
     for note in config.performance_notes:
         print(f"- {note}")
     print()
@@ -150,6 +162,13 @@ def parse_voice_setting(argument: str) -> bool | None:
         return True
     if normalized in {"off", "false", "0", "no"}:
         return False
+    return None
+
+
+def parse_tts_provider(argument: str) -> str | None:
+    normalized = argument.strip().lower()
+    if normalized in {"xtts", "gtts", "google-tts", "google_tts", "google"}:
+        return normalize_tts_provider(normalized)
     return None
 
 
@@ -273,6 +292,10 @@ def handle_speaker_command(
     config: Config,
     state: SessionState,
 ) -> None:
+    if config.tts_provider != "xtts":
+        print("XTTS speaker controls are only available when /tts xtts is active.")
+        return
+
     lowered = command.lower()
     if lowered == "/speaker":
         print(console_safe_text(f"XTTS voice is currently {describe_tts_voice(config)}."))
@@ -357,11 +380,29 @@ def handle_command(
         handle_microphone_command(command, config, state)
         return CommandResult(handled=True)
 
+    if lowered == "/tts":
+        print(f"TTS provider is currently {config.tts_provider}.")
+        return CommandResult(handled=True)
+
+    if lowered.startswith("/tts "):
+        selected_provider = parse_tts_provider(command[5:])
+        if selected_provider is None:
+            print("Use /tts xtts or /tts gtts.")
+            return CommandResult(handled=True)
+        config.tts_provider = selected_provider
+        print(f"TTS provider is now {config.tts_provider}.")
+        if config.tts_provider == "gtts":
+            print("gTTS selected. XTTS speaker commands are disabled.")
+        return CommandResult(handled=True)
+
     if lowered == "/speakers":
-        try:
-            print_xtts_speakers(config, state)
-        except RuntimeError as exc:
-            print(exc)
+        if config.tts_provider != "xtts":
+            print("XTTS speakers are only available when /tts xtts is active.")
+        else:
+            try:
+                print_xtts_speakers(config, state)
+            except RuntimeError as exc:
+                print(exc)
         return CommandResult(handled=True)
 
     if lowered == "/speaker" or lowered.startswith("/speaker "):
@@ -613,10 +654,10 @@ def main() -> None:
             audio_path = None
             try:
                 audio_path = speak_text(reply, config, state)
-                if not config.xtts_stream_output:
+                if should_play_audio_after_synthesis(config):
                     play_audio_file(audio_path, config.speaker_device_index)
             except Exception as exc:
-                latest_path = audio_path or "audio/latest_reply.wav"
+                latest_path = audio_path or "audio/latest_reply.(wav|mp3)"
                 print(
                     "[Voice] Voice generation or playback failed. "
                     f"The latest audio file is at {latest_path}: {exc}"
