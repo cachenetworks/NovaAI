@@ -41,6 +41,20 @@ from .web_search import (
     fetch_web_context,
     should_auto_search,
 )
+from .features import (
+    handle_feature_request,
+    list_reminders,
+    list_alarms,
+    cancel_all_alarms,
+    list_todos,
+    toggle_todo,
+    delete_todo,
+    list_shopping,
+    toggle_shopping_item,
+    clear_shopping_done,
+    list_calendar_events,
+)
+from .scheduler import FeatureScheduler
 
 
 def print_welcome(profile: dict[str, Any], config: Config, state: SessionState) -> None:
@@ -144,6 +158,16 @@ def print_help() -> None:
     print("/name <new name>        Rename your companion")
     print("/me <your name>         Set your name")
     print("/remember <fact>        Save something important for future chats")
+    print("/reminder               List saved reminders")
+    print("/alarm                  List saved alarms")
+    print("/alarm off              Turn off all alarms")
+    print("/todo                   List to-do items")
+    print("/todo done <n>          Mark to-do item #n as done/undone")
+    print("/todo delete <n>        Delete to-do item #n")
+    print("/shopping               List shopping items")
+    print("/shopping done <n>      Toggle shopping item #n as got/need")
+    print("/shopping clear         Remove all checked-off shopping items")
+    print("/calendar               List upcoming calendar events")
     print("/reset                  Clear conversation history")
     print("/exit                   Quit the app")
     print()
@@ -547,6 +571,135 @@ def handle_command(
                 print("That memory note is already saved.")
         return CommandResult(handled=True)
 
+    if lowered == "/reminder":
+        reminders = [r for r in list_reminders(profile) if not r.get("completed")]
+        if not reminders:
+            print("No upcoming reminders.")
+        else:
+            print()
+            for i, r in enumerate(
+                sorted(reminders, key=lambda x: x.get("due", "")), start=1
+            ):
+                print(f"  {i}. [{r.get('due', '?')}] {r.get('title', 'Untitled')}")
+            print()
+        return CommandResult(handled=True)
+
+    if lowered == "/alarm":
+        alarms = list_alarms(profile)
+        active = [a for a in alarms if a.get("active")]
+        if not active:
+            print("No active alarms.")
+        else:
+            print()
+            for i, a in enumerate(active, start=1):
+                days = a.get("days")
+                spec = a.get("specific_date", "")
+                if spec:
+                    schedule = f"on {spec}"
+                elif days:
+                    schedule = ", ".join(d.capitalize() for d in days)
+                else:
+                    schedule = "daily"
+                print(f"  {i}. {a.get('label', 'Alarm')} — {schedule}")
+            print()
+        return CommandResult(handled=True)
+
+    if lowered == "/alarm off":
+        count = cancel_all_alarms(profile)
+        save_profile(profile)
+        print(f"Turned off {count} alarm(s)." if count else "No active alarms.")
+        return CommandResult(handled=True)
+
+    if lowered == "/todo":
+        items = list_todos(profile)
+        if not items:
+            print("Your to-do list is empty.")
+        else:
+            print()
+            for i, item in enumerate(items, start=1):
+                marker = "✓" if item.get("done") else "•"
+                print(f"  {i}. {marker} {item.get('text', '')}")
+            print()
+        return CommandResult(handled=True)
+
+    if lowered.startswith("/todo done "):
+        arg = command[11:].strip()
+        try:
+            n = int(arg) - 1
+            items = list_todos(profile)
+            if 0 <= n < len(items):
+                toggle_todo(profile, items[n]["id"])
+                save_profile(profile)
+                state = "done" if items[n].get("done") is False else "undone"
+                print(f"Marked '{items[n]['text']}' as {state}.")
+            else:
+                print(f"No to-do item #{n + 1}.")
+        except ValueError:
+            print("Use /todo done <number>.")
+        return CommandResult(handled=True)
+
+    if lowered.startswith("/todo delete "):
+        arg = command[13:].strip()
+        try:
+            n = int(arg) - 1
+            items = list_todos(profile)
+            if 0 <= n < len(items):
+                delete_todo(profile, items[n]["id"])
+                save_profile(profile)
+                print(f"Deleted '{items[n]['text']}'.")
+            else:
+                print(f"No to-do item #{n + 1}.")
+        except ValueError:
+            print("Use /todo delete <number>.")
+        return CommandResult(handled=True)
+
+    if lowered == "/shopping":
+        items = list_shopping(profile)
+        if not items:
+            print("Your shopping list is empty.")
+        else:
+            print()
+            for i, item in enumerate(items, start=1):
+                marker = "✓" if item.get("done") else "•"
+                print(f"  {i}. {marker} {item.get('text', '')}")
+            print()
+        return CommandResult(handled=True)
+
+    if lowered.startswith("/shopping done "):
+        arg = command[15:].strip()
+        try:
+            n = int(arg) - 1
+            items = list_shopping(profile)
+            if 0 <= n < len(items):
+                toggle_shopping_item(profile, items[n]["id"])
+                save_profile(profile)
+                state = "checked" if not items[n].get("done") else "unchecked"
+                print(f"Marked '{items[n]['text']}' as {state}.")
+            else:
+                print(f"No shopping item #{n + 1}.")
+        except ValueError:
+            print("Use /shopping done <number>.")
+        return CommandResult(handled=True)
+
+    if lowered == "/shopping clear":
+        clear_shopping_done(profile)
+        save_profile(profile)
+        print("Cleared checked shopping items.")
+        return CommandResult(handled=True)
+
+    if lowered == "/calendar":
+        events = list_calendar_events(profile)
+        if not events:
+            print("Your calendar is empty.")
+        else:
+            print()
+            for i, ev in enumerate(events, start=1):
+                date_part = ev.get("date", "?")
+                time_part = f" {ev.get('time', '')}" if ev.get("time") else ""
+                print(f"  {i}. [{date_part}{time_part}] {ev.get('title', 'Untitled')}")
+            print()
+        return CommandResult(handled=True)
+
     return CommandResult(handled=False)
 
 
@@ -608,6 +761,30 @@ def resolve_user_turn(
         return incoming_text, False
 
 
+def _drain_scheduler_events(
+    events: list[tuple[str, dict]],
+    profile: dict,
+    config: "Config",
+    state: "SessionState",
+) -> None:
+    """Print and optionally speak any reminder/alarm events that just fired."""
+    for kind, item in events:
+        if kind == "reminder":
+            msg = f"Reminder: {item.get('title', 'Untitled')}"
+        else:
+            msg = f"Alarm: {item.get('label', 'Untitled')}"
+        print()
+        print(f"[{kind.capitalize()}] {msg}")
+        print()
+        if state.voice_enabled:
+            try:
+                audio_path = speak_text(msg, config, state)
+                if should_play_audio_after_synthesis(config):
+                    play_audio_file(audio_path, config.speaker_device_index)
+            except Exception:
+                pass
+
+
 def main() -> None:
     ensure_runtime_dirs()
     config = Config.from_env()
@@ -617,9 +794,15 @@ def main() -> None:
         input_mode=config.input_mode,
     )
 
+    scheduler = FeatureScheduler(profile, save_profile)
+    scheduler.start()
+
     print_welcome(profile, config, state)
 
     while True:
+        # Deliver any reminders / alarms that fired since the last iteration
+        _drain_scheduler_events(scheduler.drain(), profile, config, state)
+
         try:
             turn = get_next_user_turn(profile, state, config)
         except SystemExit:
@@ -639,11 +822,34 @@ def main() -> None:
             continue
 
         if should_exit:
+            scheduler.stop()
             print("See you soon.")
             break
 
         if not user_text:
             continue
+
+        # ── Feature NLP (reminders, alarms, todo, shopping, calendar) ──────
+        feature_result = handle_feature_request(user_text, profile)
+        if feature_result.handled:
+            if feature_result.save_needed:
+                save_profile(profile)
+            append_history("user", user_text)
+            append_history("assistant", feature_result.response)
+            print()
+            print(console_safe_text(
+                f"{profile['companion_name']}: {feature_result.response}"
+            ))
+            print()
+            if state.voice_enabled:
+                try:
+                    audio_path = speak_text(feature_result.response, config, state)
+                    if should_play_audio_after_synthesis(config):
+                        play_audio_file(audio_path, config.speaker_device_index)
+                except Exception:
+                    pass
+            continue
+        # ───────────────────────────────────────────────────────────────────
 
         try:
             media_action = handle_media_request(user_text, profile, config)

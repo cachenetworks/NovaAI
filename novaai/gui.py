@@ -50,6 +50,31 @@ from .web_search import (
     fetch_web_context,
     should_auto_search,
 )
+from .features import (
+    handle_feature_request,
+    check_due_reminders,
+    check_due_alarms,
+    add_reminder,
+    list_reminders,
+    delete_reminder_by_id,
+    add_alarm,
+    list_alarms,
+    cancel_alarm_by_id,
+    cancel_all_alarms,
+    add_todo,
+    list_todos,
+    toggle_todo,
+    delete_todo,
+    add_shopping_item,
+    list_shopping,
+    toggle_shopping_item,
+    clear_shopping_done,
+    clear_shopping_all,
+    add_calendar_event,
+    list_calendar_events,
+    delete_calendar_event,
+    _fmt_time,
+)
 
 PALETTE = {
     "bg": "#07131d",
@@ -1703,9 +1728,11 @@ class NovaAIGui:
     def _build_reminders_tab(self, parent: tk.Widget) -> None:
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
 
+        # ── Reminders section ─────────────────────────────────────────────
         reminders_card = self._make_shell_card(parent, bg=PALETTE["card_alt"])
-        reminders_card.grid(row=0, column=0, sticky="nsew")
+        reminders_card.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
         reminders_card.grid_columnconfigure(0, weight=1)
         reminders_card.grid_rowconfigure(2, weight=1)
 
@@ -1718,7 +1745,7 @@ class NovaAIGui:
         ).grid(row=0, column=0, sticky="w")
         tk.Label(
             reminders_card,
-            text="Create timed alarms and reminders separately from the avatar viewer.",
+            text="One-time timed reminders. Say 'remind me to … on DATE TIME' to add one.",
             bg=PALETTE["card_alt"],
             fg=PALETTE["muted"],
             font=("Segoe UI", 10),
@@ -1739,13 +1766,13 @@ class NovaAIGui:
         )
         self.reminders_listbox.grid(row=2, column=0, sticky="nsew")
 
-        control_row = tk.Frame(reminders_card, bg=PALETTE["card_alt"])
-        control_row.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-        control_row.grid_columnconfigure(0, weight=1)
-        control_row.grid_columnconfigure(1, weight=1)
+        rem_ctrl = tk.Frame(reminders_card, bg=PALETTE["card_alt"])
+        rem_ctrl.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        rem_ctrl.grid_columnconfigure(0, weight=1)
+        rem_ctrl.grid_columnconfigure(1, weight=1)
 
         tk.Button(
-            control_row,
+            rem_ctrl,
             text="Add Reminder",
             command=self.add_reminder,
             bg=PALETTE["accent_deep"],
@@ -1758,7 +1785,7 @@ class NovaAIGui:
             cursor="hand2",
         ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
         tk.Button(
-            control_row,
+            rem_ctrl,
             text="Delete Selected",
             command=self.delete_reminder,
             bg=PALETTE["danger_deep"],
@@ -1772,6 +1799,649 @@ class NovaAIGui:
         ).grid(row=0, column=1, sticky="ew")
 
         self._refresh_reminders_list()
+
+        # ── Alarms section ────────────────────────────────────────────────
+        alarms_card = self._make_shell_card(parent, bg=PALETTE["card"])
+        alarms_card.grid(row=1, column=0, sticky="nsew")
+        alarms_card.grid_columnconfigure(0, weight=1)
+        alarms_card.grid_rowconfigure(2, weight=1)
+
+        tk.Label(
+            alarms_card,
+            text="Alarms",
+            bg=PALETTE["card"],
+            fg=PALETTE["text"],
+            font=("Bahnschrift SemiBold", 16),
+        ).grid(row=0, column=0, sticky="w")
+        tk.Label(
+            alarms_card,
+            text="Recurring or one-shot alarms. Say 'set alarm 10am monday to friday' to add one.",
+            bg=PALETTE["card"],
+            fg=PALETTE["muted"],
+            font=("Segoe UI", 10),
+            wraplength=760,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        self.alarms_listbox = tk.Listbox(
+            alarms_card,
+            bg=PALETTE["input"],
+            fg=PALETTE["text"],
+            selectbackground=PALETTE["accent"],
+            highlightthickness=1,
+            highlightbackground=PALETTE["border_soft"],
+            relief="flat",
+            font=("Segoe UI", 10),
+            activestyle="none",
+        )
+        self.alarms_listbox.grid(row=2, column=0, sticky="nsew")
+
+        alarm_ctrl = tk.Frame(alarms_card, bg=PALETTE["card"])
+        alarm_ctrl.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        alarm_ctrl.grid_columnconfigure(0, weight=1)
+        alarm_ctrl.grid_columnconfigure(1, weight=1)
+        alarm_ctrl.grid_columnconfigure(2, weight=1)
+
+        tk.Button(
+            alarm_ctrl,
+            text="Add Alarm",
+            command=self.add_alarm_dialog,
+            bg=PALETTE["accent_deep"],
+            fg=PALETTE["accent"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        tk.Button(
+            alarm_ctrl,
+            text="Toggle On/Off",
+            command=self.toggle_alarm,
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["text"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=1, sticky="ew", padx=(0, 6))
+        tk.Button(
+            alarm_ctrl,
+            text="Delete Selected",
+            command=self.delete_alarm,
+            bg=PALETTE["danger_deep"],
+            fg=PALETTE["danger"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=2, sticky="ew")
+
+        self._refresh_alarms_list()
+
+    # ── Calendar tab ──────────────────────────────────────────────────────────
+
+    def _build_calendar_tab(self, parent: tk.Widget) -> None:
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(0, weight=1)
+
+        card = self._make_shell_card(parent, bg=PALETTE["card_alt"])
+        card.grid(row=0, column=0, sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_rowconfigure(2, weight=1)
+
+        tk.Label(
+            card,
+            text="Calendar",
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["text"],
+            font=("Bahnschrift SemiBold", 16),
+        ).grid(row=0, column=0, sticky="w")
+        tk.Label(
+            card,
+            text="Say 'add TITLE to calendar on DATE' or 'schedule TITLE for DATE' to create events.",
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["muted"],
+            font=("Segoe UI", 10),
+            wraplength=760,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        self.calendar_listbox = tk.Listbox(
+            card,
+            bg=PALETTE["input"],
+            fg=PALETTE["text"],
+            selectbackground=PALETTE["accent"],
+            highlightthickness=1,
+            highlightbackground=PALETTE["border_soft"],
+            relief="flat",
+            font=("Segoe UI", 10),
+            activestyle="none",
+        )
+        self.calendar_listbox.grid(row=2, column=0, sticky="nsew")
+
+        # Input row
+        input_row = tk.Frame(card, bg=PALETTE["card_alt"])
+        input_row.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        input_row.grid_columnconfigure(0, weight=2)
+        input_row.grid_columnconfigure(1, weight=1)
+
+        self.calendar_title_entry = tk.Entry(
+            input_row,
+            bg=PALETTE["input"],
+            fg=PALETTE["text"],
+            insertbackground=PALETTE["text"],
+            relief="flat",
+            font=("Segoe UI", 10),
+        )
+        self.calendar_title_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6), ipady=6)
+        self.calendar_title_entry.insert(0, "Event title")
+        self.calendar_title_entry.bind("<FocusIn>", lambda e: (
+            self.calendar_title_entry.delete(0, "end")
+            if self.calendar_title_entry.get() == "Event title" else None
+        ))
+
+        self.calendar_date_entry = tk.Entry(
+            input_row,
+            bg=PALETTE["input"],
+            fg=PALETTE["text"],
+            insertbackground=PALETTE["text"],
+            relief="flat",
+            font=("Segoe UI", 10),
+        )
+        self.calendar_date_entry.grid(row=0, column=1, sticky="ew", padx=(0, 6), ipady=6)
+        self.calendar_date_entry.insert(0, "Date/time (e.g. 25 June 10am)")
+        self.calendar_date_entry.bind("<FocusIn>", lambda e: (
+            self.calendar_date_entry.delete(0, "end")
+            if "Date/time" in self.calendar_date_entry.get() else None
+        ))
+
+        ctrl_row = tk.Frame(card, bg=PALETTE["card_alt"])
+        ctrl_row.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        ctrl_row.grid_columnconfigure(0, weight=1)
+        ctrl_row.grid_columnconfigure(1, weight=1)
+
+        tk.Button(
+            ctrl_row,
+            text="Add Event",
+            command=self.add_calendar_event_gui,
+            bg=PALETTE["accent_deep"],
+            fg=PALETTE["accent"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        tk.Button(
+            ctrl_row,
+            text="Delete Selected",
+            command=self.delete_calendar_event_gui,
+            bg=PALETTE["danger_deep"],
+            fg=PALETTE["danger"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=1, sticky="ew")
+
+        self._refresh_calendar_list()
+
+    def _refresh_calendar_list(self) -> None:
+        if not hasattr(self, "calendar_listbox"):
+            return
+        events = list_calendar_events(self.profile)
+        self.calendar_listbox.delete(0, "end")
+        for ev in events:
+            date_part = ev.get("date", "")
+            time_part = f" {ev.get('time', '')}" if ev.get("time") else ""
+            self.calendar_listbox.insert("end", f"[{date_part}{time_part}] {ev.get('title', 'Untitled')}")
+
+    def add_calendar_event_gui(self) -> None:
+        title = self.calendar_title_entry.get().strip()
+        if not title or title == "Event title":
+            messagebox.showwarning("Missing title", "Enter an event title.", parent=self.root)
+            return
+        date_text = self.calendar_date_entry.get().strip()
+        if "Date/time" in date_text:
+            date_text = ""
+
+        event_date: str | None = None
+        event_time: str | None = None
+        if date_text:
+            try:
+                from .features import _parse_any_datetime
+                dt = _parse_any_datetime(date_text)
+                if dt:
+                    event_date = dt.strftime("%Y-%m-%d")
+                    event_time = dt.strftime("%H:%M")
+            except Exception:
+                pass
+
+        add_calendar_event(self.profile, title, event_date=event_date, event_time=event_time)
+        self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+        self._refresh_calendar_list()
+        self.calendar_title_entry.delete(0, "end")
+        self.calendar_title_entry.insert(0, "Event title")
+        self.calendar_date_entry.delete(0, "end")
+        self.calendar_date_entry.insert(0, "Date/time (e.g. 25 June 10am)")
+        self._set_status_text(f"Added '{title}' to calendar.")
+
+    def delete_calendar_event_gui(self) -> None:
+        selection = self.calendar_listbox.curselection()
+        if not selection:
+            return
+        events = list_calendar_events(self.profile)
+        idx = selection[0]
+        if idx < 0 or idx >= len(events):
+            return
+        delete_calendar_event(self.profile, events[idx]["id"])
+        self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+        self._refresh_calendar_list()
+        self._set_status_text("Calendar event removed.")
+
+    # ── Shopping tab ──────────────────────────────────────────────────────────
+
+    def _build_shopping_tab(self, parent: tk.Widget) -> None:
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(0, weight=1)
+
+        card = self._make_shell_card(parent, bg=PALETTE["card_alt"])
+        card.grid(row=0, column=0, sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_rowconfigure(2, weight=1)
+
+        tk.Label(
+            card,
+            text="Shopping List",
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["text"],
+            font=("Bahnschrift SemiBold", 16),
+        ).grid(row=0, column=0, sticky="w")
+        tk.Label(
+            card,
+            text="Say 'add ITEM to my shopping list' to add items via chat.",
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["muted"],
+            font=("Segoe UI", 10),
+            wraplength=760,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        self.shopping_listbox = tk.Listbox(
+            card,
+            bg=PALETTE["input"],
+            fg=PALETTE["text"],
+            selectbackground=PALETTE["accent"],
+            highlightthickness=1,
+            highlightbackground=PALETTE["border_soft"],
+            relief="flat",
+            font=("Segoe UI", 10),
+            activestyle="none",
+        )
+        self.shopping_listbox.grid(row=2, column=0, sticky="nsew")
+
+        # Input row
+        input_row = tk.Frame(card, bg=PALETTE["card_alt"])
+        input_row.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        input_row.grid_columnconfigure(0, weight=1)
+
+        self.shopping_entry = tk.Entry(
+            input_row,
+            bg=PALETTE["input"],
+            fg=PALETTE["text"],
+            insertbackground=PALETTE["text"],
+            relief="flat",
+            font=("Segoe UI", 10),
+        )
+        self.shopping_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6), ipady=6)
+        self.shopping_entry.bind("<Return>", lambda e: self.add_shopping_item_gui())
+
+        tk.Button(
+            input_row,
+            text="Add Item",
+            command=self.add_shopping_item_gui,
+            bg=PALETTE["accent_deep"],
+            fg=PALETTE["accent"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=6,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=1)
+
+        ctrl_row = tk.Frame(card, bg=PALETTE["card_alt"])
+        ctrl_row.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        ctrl_row.grid_columnconfigure(0, weight=1)
+        ctrl_row.grid_columnconfigure(1, weight=1)
+        ctrl_row.grid_columnconfigure(2, weight=1)
+
+        tk.Button(
+            ctrl_row,
+            text="Toggle Got/Need",
+            command=self.toggle_shopping_item_gui,
+            bg=PALETTE["card"],
+            fg=PALETTE["text"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        tk.Button(
+            ctrl_row,
+            text="Clear Got Items",
+            command=self.clear_shopping_done_gui,
+            bg=PALETTE["card"],
+            fg=PALETTE["muted"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=1, sticky="ew", padx=(0, 6))
+        tk.Button(
+            ctrl_row,
+            text="Clear All",
+            command=self.clear_shopping_all_gui,
+            bg=PALETTE["danger_deep"],
+            fg=PALETTE["danger"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=2, sticky="ew")
+
+        self._refresh_shopping_list()
+
+    def _refresh_shopping_list(self) -> None:
+        if not hasattr(self, "shopping_listbox"):
+            return
+        items = list_shopping(self.profile)
+        self.shopping_listbox.delete(0, "end")
+        for item in items:
+            marker = "✓" if item.get("done") else "•"
+            self.shopping_listbox.insert("end", f"{marker} {item.get('text', '')}")
+
+    def add_shopping_item_gui(self) -> None:
+        text = self.shopping_entry.get().strip()
+        if not text:
+            return
+        add_shopping_item(self.profile, text)
+        self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+        self._refresh_shopping_list()
+        self.shopping_entry.delete(0, "end")
+        self._set_status_text(f"Added '{text}' to shopping list.")
+
+    def toggle_shopping_item_gui(self) -> None:
+        selection = self.shopping_listbox.curselection()
+        if not selection:
+            return
+        items = list_shopping(self.profile)
+        idx = selection[0]
+        if 0 <= idx < len(items):
+            toggle_shopping_item(self.profile, items[idx]["id"])
+            self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+            self._refresh_shopping_list()
+
+    def clear_shopping_done_gui(self) -> None:
+        clear_shopping_done(self.profile)
+        self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+        self._refresh_shopping_list()
+        self._set_status_text("Cleared got items from shopping list.")
+
+    def clear_shopping_all_gui(self) -> None:
+        if not messagebox.askyesno(
+            "Clear all",
+            "Remove every item from the shopping list?",
+            parent=self.root,
+        ):
+            return
+        clear_shopping_all(self.profile)
+        self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+        self._refresh_shopping_list()
+        self._set_status_text("Shopping list cleared.")
+
+    # ── Todo tab ──────────────────────────────────────────────────────────────
+
+    def _build_todo_tab(self, parent: tk.Widget) -> None:
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(0, weight=1)
+
+        card = self._make_shell_card(parent, bg=PALETTE["card_alt"])
+        card.grid(row=0, column=0, sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_rowconfigure(2, weight=1)
+
+        tk.Label(
+            card,
+            text="To-Do List",
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["text"],
+            font=("Bahnschrift SemiBold", 16),
+        ).grid(row=0, column=0, sticky="w")
+        tk.Label(
+            card,
+            text="Say 'add TASK to my todo list' to add tasks via chat.",
+            bg=PALETTE["card_alt"],
+            fg=PALETTE["muted"],
+            font=("Segoe UI", 10),
+            wraplength=760,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        self.todo_listbox = tk.Listbox(
+            card,
+            bg=PALETTE["input"],
+            fg=PALETTE["text"],
+            selectbackground=PALETTE["accent"],
+            highlightthickness=1,
+            highlightbackground=PALETTE["border_soft"],
+            relief="flat",
+            font=("Segoe UI", 10),
+            activestyle="none",
+        )
+        self.todo_listbox.grid(row=2, column=0, sticky="nsew")
+
+        # Input row
+        input_row = tk.Frame(card, bg=PALETTE["card_alt"])
+        input_row.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        input_row.grid_columnconfigure(0, weight=1)
+
+        self.todo_entry = tk.Entry(
+            input_row,
+            bg=PALETTE["input"],
+            fg=PALETTE["text"],
+            insertbackground=PALETTE["text"],
+            relief="flat",
+            font=("Segoe UI", 10),
+        )
+        self.todo_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6), ipady=6)
+        self.todo_entry.bind("<Return>", lambda e: self.add_todo_item_gui())
+
+        tk.Button(
+            input_row,
+            text="Add Task",
+            command=self.add_todo_item_gui,
+            bg=PALETTE["accent_deep"],
+            fg=PALETTE["accent"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=6,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=1)
+
+        ctrl_row = tk.Frame(card, bg=PALETTE["card_alt"])
+        ctrl_row.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        ctrl_row.grid_columnconfigure(0, weight=1)
+        ctrl_row.grid_columnconfigure(1, weight=1)
+
+        tk.Button(
+            ctrl_row,
+            text="Mark Done/Undone",
+            command=self.toggle_todo_item_gui,
+            bg=PALETTE["card"],
+            fg=PALETTE["text"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        tk.Button(
+            ctrl_row,
+            text="Delete Selected",
+            command=self.delete_todo_item_gui,
+            bg=PALETTE["danger_deep"],
+            fg=PALETTE["danger"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            font=("Segoe UI Semibold", 10),
+            cursor="hand2",
+        ).grid(row=0, column=1, sticky="ew")
+
+        self._refresh_todo_list()
+
+    def _refresh_todo_list(self) -> None:
+        if not hasattr(self, "todo_listbox"):
+            return
+        items = list_todos(self.profile)
+        self.todo_listbox.delete(0, "end")
+        for item in items:
+            marker = "✓" if item.get("done") else "•"
+            self.todo_listbox.insert("end", f"{marker} {item.get('text', '')}")
+
+    def add_todo_item_gui(self) -> None:
+        text = self.todo_entry.get().strip()
+        if not text:
+            return
+        add_todo(self.profile, text)
+        self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+        self._refresh_todo_list()
+        self.todo_entry.delete(0, "end")
+        self._set_status_text(f"Added '{text}' to to-do list.")
+
+    def toggle_todo_item_gui(self) -> None:
+        selection = self.todo_listbox.curselection()
+        if not selection:
+            return
+        items = list_todos(self.profile)
+        idx = selection[0]
+        if 0 <= idx < len(items):
+            toggle_todo(self.profile, items[idx]["id"])
+            self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+            self._refresh_todo_list()
+
+    def delete_todo_item_gui(self) -> None:
+        selection = self.todo_listbox.curselection()
+        if not selection:
+            return
+        items = list_todos(self.profile)
+        idx = selection[0]
+        if 0 <= idx < len(items):
+            delete_todo(self.profile, items[idx]["id"])
+            self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+            self._refresh_todo_list()
+            self._set_status_text("Task deleted.")
+
+    # ── Alarm helpers (used by the alarms section of the reminders tab) ───────
+
+    def _refresh_alarms_list(self) -> None:
+        if not hasattr(self, "alarms_listbox"):
+            return
+        alarms = list_alarms(self.profile)
+        self.alarms_listbox.delete(0, "end")
+        for a in alarms:
+            active = a.get("active", False)
+            icon = "🔔" if active else "🔕"
+            days = a.get("days")
+            spec = a.get("specific_date", "")
+            if spec:
+                schedule = f"on {spec}"
+            elif days:
+                schedule = ", ".join(d.capitalize() for d in days)
+            else:
+                schedule = "daily"
+            self.alarms_listbox.insert(
+                "end",
+                f"{icon} {a.get('label', 'Alarm')} — {schedule}",
+            )
+
+    def add_alarm_dialog(self) -> None:
+        time_input = simpledialog.askstring(
+            "Add Alarm",
+            "Time for alarm (e.g. 10am, 07:30):",
+            parent=self.root,
+        )
+        if not time_input:
+            return
+        from .features import _extract_time_str
+        time_str = _extract_time_str(time_input)
+        if not time_str:
+            messagebox.showerror(
+                "Invalid time",
+                "Could not parse that time. Try '10am' or '10:30'.",
+                parent=self.root,
+            )
+            return
+        days_input = simpledialog.askstring(
+            "Alarm schedule",
+            "Days to repeat (e.g. 'monday to friday', 'daily', or leave blank for daily):",
+            parent=self.root,
+        )
+        days = None
+        if days_input and days_input.strip():
+            from .features import parse_day_range
+            days = parse_day_range(days_input.strip())
+        add_alarm(self.profile, time_str, days=days)
+        self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+        self._refresh_alarms_list()
+        self._set_status_text(f"Alarm set for {_fmt_time(time_str)}.")
+
+    def toggle_alarm(self) -> None:
+        selection = self.alarms_listbox.curselection()
+        if not selection:
+            return
+        alarms = list_alarms(self.profile)
+        idx = selection[0]
+        if 0 <= idx < len(alarms):
+            alarms[idx]["active"] = not alarms[idx].get("active", True)
+            self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+            self._refresh_alarms_list()
+
+    def delete_alarm(self) -> None:
+        selection = self.alarms_listbox.curselection()
+        if not selection:
+            return
+        alarms = list_alarms(self.profile)
+        idx = selection[0]
+        if 0 <= idx < len(alarms):
+            cancel_alarm_by_id(self.profile, alarms[idx]["id"])
+            # Remove it entirely (not just deactivate)
+            details = self.profile.get("profile_details", {})
+            alarm_list = details.get("alarms", [])
+            alarm_list[:] = [a for a in alarm_list if a.get("id") != alarms[idx]["id"]]
+            self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+            self._refresh_alarms_list()
+            self._set_status_text("Alarm deleted.")
 
     def _get_avatar_settings(self) -> dict[str, object]:
         avatar_settings = self.profile["profile_details"].setdefault("avatar", {})
@@ -1961,24 +2631,24 @@ class NovaAIGui:
         self.root.after(30000, self._schedule_reminder_check)
 
     def _check_reminders(self) -> None:
-        reminders = self._standardize_reminders()
-        now = datetime.now()
-        updated = False
-        for reminder in reminders:
-            if reminder.get("completed"):
-                continue
-            due_text = str(reminder.get("due", ""))
-            try:
-                due = datetime.fromisoformat(due_text)
-            except ValueError:
-                continue
-            if due <= now:
-                reminder["completed"] = True
-                updated = True
-                self._trigger_reminder(reminder)
-        if updated:
-            self._save_avatar_settings()
+        changed = False
+
+        # Check reminders via features module
+        fired_reminders = check_due_reminders(self.profile)
+        for reminder in fired_reminders:
+            self._trigger_reminder(reminder)
+            changed = True
+
+        # Check alarms via features module
+        fired_alarms = check_due_alarms(self.profile)
+        for alarm in fired_alarms:
+            self._trigger_alarm(alarm)
+            changed = True
+
+        if changed:
+            self.profile = save_profile_by_id(self.active_profile_id, self.profile)
             self._refresh_reminders_list()
+            self._refresh_alarms_list()
 
     def _trigger_reminder(self, reminder: dict[str, object]) -> None:
         message = f"Reminder: {reminder.get('title', 'Untitled')}"
@@ -1986,6 +2656,12 @@ class NovaAIGui:
         if self.state.voice_enabled:
             speak_text(message, self.config, self.state)
         # self.avatar_bridge.publish_reminder(reminder)
+
+    def _trigger_alarm(self, alarm: dict[str, object]) -> None:
+        message = f"Alarm: {alarm.get('label', 'Alarm')}"
+        self._append_system_message(message)
+        if self.state.voice_enabled:
+            speak_text(message, self.config, self.state)
 
     def _detect_emotion(self, text: str) -> str:
         normalized = str(text or "").lower()
@@ -3212,6 +3888,30 @@ class NovaAIGui:
                 )
             )
             return "Media request handled."
+
+        # ── Feature NLP (reminders, alarms, todo, shopping, calendar) ──────
+        feature_result = handle_feature_request(user_text, self.profile)
+        if feature_result.handled:
+            if feature_result.save_needed:
+                self.profile = save_profile_by_id(self.active_profile_id, self.profile)
+            append_history("user", user_text)
+            append_history("assistant", feature_result.response)
+            response_text = feature_result.response
+            self._safe_ui(
+                lambda t=response_text: self._append_message(
+                    self.profile["companion_name"], t, "assistant"
+                )
+            )
+            # Refresh all feature tabs
+            self._safe_ui(self._refresh_reminders_list)
+            self._safe_ui(self._refresh_alarms_list)
+            self._safe_ui(self._refresh_todo_list)
+            self._safe_ui(self._refresh_shopping_list)
+            self._safe_ui(self._refresh_calendar_list)
+            if self.state.voice_enabled:
+                speak_text(response_text, self.config, self.state)
+            return "Feature request handled."
+        # ───────────────────────────────────────────────────────────────────
 
         web_context: str | None = None
         web_note: str | None = None
