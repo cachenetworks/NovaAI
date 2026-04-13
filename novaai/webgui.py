@@ -124,6 +124,12 @@ class Api:
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
+    def _not_ready(self) -> dict[str, Any] | None:
+        """Return an error dict if initialize() hasn't run yet, else None."""
+        if not self._initialized:
+            return {"ok": False, "msg": "Still loading, please wait..."}
+        return None
+
     def _js(self, code: str) -> None:
         global _window
         if _window:
@@ -179,6 +185,7 @@ class Api:
     # ── session controls ──────────────────────────────────────────────────────
 
     def start_session(self) -> dict[str, Any]:
+        if (err := self._not_ready()): return err
         if self.session_started:
             return {"ok": False, "msg": "Session is already running."}
         self.session_started = True
@@ -194,6 +201,7 @@ class Api:
         return {"voice_enabled": self.state.voice_enabled}
 
     def toggle_handsfree(self) -> dict[str, Any]:
+        if (err := self._not_ready()): return err
         self.hands_free_enabled = not self.hands_free_enabled
         self.config.input_mode = "voice" if self.hands_free_enabled else "text"
         self._push_state()
@@ -209,11 +217,13 @@ class Api:
         return {"mic_muted": self.mic_muted}
 
     def toggle_web_search(self) -> dict[str, Any]:
+        if (err := self._not_ready()): return err
         self.config.web_browsing_enabled = not self.config.web_browsing_enabled
         self._push_state()
         return {"web_search": self.config.web_browsing_enabled}
 
     def toggle_auto_search(self) -> dict[str, Any]:
+        if (err := self._not_ready()): return err
         self.config.web_auto_search = not self.config.web_auto_search
         self._push_state()
         return {"web_auto_search": self.config.web_auto_search}
@@ -221,6 +231,7 @@ class Api:
     # ── chat ──────────────────────────────────────────────────────────────────
 
     def send_message(self, text: str) -> dict[str, Any]:
+        if (err := self._not_ready()): return err
         if not text or not text.strip():
             return {"ok": False, "msg": "Empty message."}
         if not self.session_started:
@@ -237,6 +248,7 @@ class Api:
             self._release()
 
     def start_listen(self) -> dict[str, Any]:
+        if (err := self._not_ready()): return err
         if not self.session_started:
             return {"ok": False, "msg": "Start a session first."}
         if self.mic_muted:
@@ -575,6 +587,8 @@ class Api:
     # ── settings / devices ────────────────────────────────────────────────────
 
     def get_audio_devices(self) -> dict[str, Any]:
+        if not self._initialized:
+            return {"mics": [], "speakers": [], "current_mic": None, "current_speaker": None}
         try:
             mics = list_input_devices_compact()
             speakers = list_output_devices_compact()
@@ -589,6 +603,7 @@ class Api:
         }
 
     def apply_audio_devices(self, mic_index: Any, speaker_index: Any) -> dict[str, Any]:
+        if (err := self._not_ready()): return err
         self.config.mic_device_index = int(mic_index) if mic_index is not None else None
         self.config.speaker_device_index = int(speaker_index) if speaker_index is not None else None
         self.state.mic_calibrated = False
@@ -597,6 +612,7 @@ class Api:
         return {"ok": True, "msg": "Audio devices applied."}
 
     def recalibrate_mic(self) -> dict[str, Any]:
+        if (err := self._not_ready()): return err
         if not self._acquire():
             return {"ok": False, "msg": "System is busy."}
         try:
@@ -614,6 +630,8 @@ class Api:
             self._release()
 
     def get_performance_info(self) -> list[str]:
+        if not self._initialized:
+            return ["Still loading..."]
         lines = [
             f"Model: {self.config.model}",
             f"Provider: {self.config.llm_provider}",
