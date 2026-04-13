@@ -96,23 +96,13 @@ function Ask-Input {
 function Has-Command { param([string]$cmd) return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 
 function Invoke-Native {
-    # Run an external command without $ErrorActionPreference = "Stop" killing it on stderr.
-    # Returns the exit code. stdout/stderr go straight to the console.
-    param([scriptblock]$Command)
-    $prevPref = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = "Continue"
-        & $Command 2>&1 | ForEach-Object {
-            if ($_ -is [System.Management.Automation.ErrorRecord]) {
-                Write-Host $_.ToString() -ForegroundColor DarkGray
-            } else {
-                Write-Host $_
-            }
-        }
-        return $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $prevPref
-    }
+    # Run an external command via cmd /c with stderr merged into stdout INSIDE
+    # cmd, so PowerShell's error stream never sees it. Completely immune to
+    # $ErrorActionPreference = "Stop". Returns the exit code.
+    param([string]$CommandLine)
+    $output = cmd /c "$CommandLine 2>&1"
+    if ($output) { $output | ForEach-Object { Write-Host $_ } }
+    return $LASTEXITCODE
 }
 
 function Has-Winget { return Has-Command "winget" }
@@ -376,12 +366,12 @@ function Get-NovaAI {
         if (Test-Path "$INSTALL_DIR\.git") {
             Write-Info "Pulling latest changes..."
             Push-Location $INSTALL_DIR
-            $gitExit = Invoke-Native { git pull origin $REPO_BRANCH --ff-only }
+            $gitExit = Invoke-Native "git pull origin $REPO_BRANCH --ff-only"
             Pop-Location
             if ($gitExit -ne 0) {
                 Write-Warn "git pull failed (exit $gitExit). Trying fresh clone instead..."
                 Remove-Item $INSTALL_DIR -Recurse -Force
-                $gitExit = Invoke-Native { git clone --branch $REPO_BRANCH --single-branch $REPO_URL $INSTALL_DIR }
+                $gitExit = Invoke-Native "git clone --branch $REPO_BRANCH --single-branch $REPO_URL `"$INSTALL_DIR`""
                 if ($gitExit -ne 0) { throw "git clone failed (exit $gitExit)." }
                 Write-Ok "Fresh clone to $INSTALL_DIR"
             } else {
@@ -389,7 +379,7 @@ function Get-NovaAI {
             }
         } else {
             Write-Info "Cloning from GitHub..."
-            $gitExit = Invoke-Native { git clone --branch $REPO_BRANCH --single-branch $REPO_URL $INSTALL_DIR }
+            $gitExit = Invoke-Native "git clone --branch $REPO_BRANCH --single-branch $REPO_URL `"$INSTALL_DIR`""
             if ($gitExit -ne 0) { throw "git clone failed (exit $gitExit)." }
             Write-Ok "Cloned to $INSTALL_DIR"
         }
@@ -425,9 +415,9 @@ function Run-Setup {
     Push-Location $INSTALL_DIR
     try {
         if ($PythonCmd -eq "py") {
-            $setupExit = Invoke-Native { py -3.11 setup.py --setup }
+            $setupExit = Invoke-Native "py -3.11 setup.py --setup"
         } else {
-            $setupExit = Invoke-Native { & $PythonCmd setup.py --setup }
+            $setupExit = Invoke-Native "$PythonCmd setup.py --setup"
         }
         if ($setupExit -ne 0) { throw "Setup script failed." }
         Write-Ok "Setup complete."
@@ -471,7 +461,7 @@ function Ask-GPU {
     if ($choice -eq 0) {
         Write-Info "Installing CUDA-enabled PyTorch... (this downloads ~2 GB)"
         $venvPython = "$INSTALL_DIR\.venv\Scripts\python.exe"
-        $pipExit = Invoke-Native { & $venvPython -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchcodec -q }
+        $pipExit = Invoke-Native "`"$venvPython`" -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchcodec -q"
         if ($pipExit -eq 0) {
             Write-Ok "CUDA PyTorch installed. Voice synthesis will be much faster!"
         } else {
@@ -602,10 +592,10 @@ function Start-OllamaAndPull {
 
     # Pull model
     Write-Info "Checking model '$Model'..."
-    $showExit = Invoke-Native { & $OllamaExe show $Model }
+    $showExit = Invoke-Native "`"$OllamaExe`" show $Model"
     if ($showExit -ne 0) {
         Write-Info "Pulling model '$Model'... (this may take a while)"
-        $pullExit = Invoke-Native { & $OllamaExe pull $Model }
+        $pullExit = Invoke-Native "`"$OllamaExe`" pull $Model"
         if ($pullExit -ne 0) {
             Write-Warn "Could not pull model '$Model'. You can pull it later: ollama pull $Model"
         } else {
