@@ -399,17 +399,17 @@ def copy_update_tree(source_root: Path, destination_root: Path) -> None:
 
 
 def rerun_setup() -> None:
-    setup_script = ROOT_DIR / "setup.bat"
-    if os.name != "nt" or not setup_script.exists():
+    setup_py = ROOT_DIR / "setup.py"
+    if not setup_py.exists():
         return
 
     result = subprocess.run(
-        ["cmd", "/c", str(setup_script)],
+        [sys.executable, str(setup_py), "--setup"],
         cwd=str(ROOT_DIR),
         check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError("setup.bat failed after updating NovaAI.")
+        raise RuntimeError("Setup failed after updating NovaAI.")
 
 
 def apply_update() -> UpdateStatus:

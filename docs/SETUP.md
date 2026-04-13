@@ -4,52 +4,66 @@ Everything you need to get NovaAI running on Windows.
 
 ---
 
-## 📋 Prerequisites
+## ⚡ One-Line Install (fresh machine)
+
+Open PowerShell and paste:
+
+```powershell
+powershell -c "irm https://raw.githubusercontent.com/cachenetworks/NovaAI/main/install.ps1 | iex"
+```
+
+This interactive installer handles everything — Python, Ollama, NVIDIA GPU, desktop shortcut. Just answer a few questions.
+
+### Prerequisites (handled automatically by the installer)
 
 - **Windows 10 or 11** (64-bit)
+- **Python 3.11+** — installed via winget if missing
 - **Internet connection** for initial setup
 - **~4 GB disk space** for models and dependencies
 - **(Optional)** NVIDIA GPU with CUDA for faster voice
 
-> 💡 Don't have Python or Ollama installed? No worries — `setup.bat` handles both.
-
 ---
 
-## 🚀 Automatic Setup
+## 🚀 Already have the repo? Setup + Launch
 
 ```powershell
-.\setup.bat
+python setup.py
 ```
 
-This single script does **everything**:
+First run does the full setup, then launches the GUI. Subsequent runs skip straight to launch.
+
+### What setup does
 
 | Step | What It Does |
 |------|-------------|
-| 1️⃣ | Checks for Python 3.11 — installs via `winget` if missing |
-| 2️⃣ | Creates a `.venv` virtual environment |
-| 3️⃣ | Installs all Python packages from `requirements.txt` |
-| 4️⃣ | Creates `data/` and `audio/` directories, seeds `.env` and `data/profile.json` |
-| 5️⃣ | Checks for Ollama — installs via `winget` if missing |
-| 6️⃣ | Starts the Ollama server |
-| 7️⃣ | Pulls the default chat model (`dolphin3`) |
-| 8️⃣ | Preloads faster-whisper and XTTS-v2 model files |
-
-After setup completes, you'll see instructions for launching.
+| 1️⃣ | Creates a `.venv` virtual environment |
+| 2️⃣ | Installs all Python packages from `requirements.txt` |
+| 3️⃣ | Creates `data/` and `audio/` directories, seeds `.env` and `data/profile.json` |
+| 4️⃣ | Checks for Ollama — installs via `winget` if missing |
+| 5️⃣ | Starts the Ollama server |
+| 6️⃣ | Pulls the default chat model (`dolphin3`) |
+| 7️⃣ | Preloads faster-whisper and XTTS-v2 model files |
+| 8️⃣ | Writes the setup marker so it won't run again |
 
 ---
 
-## 🖥️ Launching
-
-### Desktop GUI (recommended)
+## 🖥️ Launch Options
 
 ```powershell
-.\launch_gui.bat
-```
+# Default — setup if needed, then launch GUI
+python setup.py
 
-### Terminal mode
+# Launch GUI (skip setup if already done)
+python setup.py --launch
 
-```powershell
-.\.venv\Scripts\python.exe app.py
+# Terminal chat mode
+python setup.py --terminal
+
+# Re-run setup only (no launch)
+python setup.py --setup
+
+# Check for updates and apply
+python setup.py --update
 ```
 
 ### First launch
@@ -84,7 +98,7 @@ With `AUTO_UPDATE_CHECK=true` and `AUTO_UPDATE_INSTALL=true` in `.env`, NovaAI c
 ### Manual update
 
 ```powershell
-.\update.bat
+python setup.py --update
 ```
 
 ### Safety
@@ -97,10 +111,6 @@ With `AUTO_UPDATE_CHECK=true` and `AUTO_UPDATE_INSTALL=true` in `.env`, NovaAI c
 
 ## 🔧 Troubleshooting
 
-### `'powershell' is not recognized`
-
-The setup script uses full paths for PowerShell. If you still see this, make sure `%SystemRoot%\System32\WindowsPowerShell\v1.0\` exists.
-
 ### Ollama won't start
 
 - Check if Ollama is already running: visit `http://127.0.0.1:11434/api/tags` in a browser
@@ -112,12 +122,12 @@ The setup script uses full paths for PowerShell. If you still see this, make sur
 Run setup again to ensure all dependencies are installed:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+python setup.py --setup
 ```
 
 ### Models downloading slowly
 
-XTTS-v2 and faster-whisper models are several GB. The first download takes time depending on your connection. `setup.bat` preloads them so the app launch is faster.
+XTTS-v2 and faster-whisper models are several GB. The first download takes time depending on your connection. Setup preloads them so the app launch is faster.
 
 ### No sound output
 

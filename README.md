@@ -34,30 +34,32 @@ Think Alexa, but with *attitude* and zero cloud lock-in. 🔥
 
 ## 🚀 Quick Start
 
-### 1️⃣ Run setup (one time)
+### ⚡ One-Line Install (fresh machine)
+
+Open PowerShell and paste:
 
 ```powershell
-.\setup.bat
+powershell -c "irm https://raw.githubusercontent.com/cachenetworks/NovaAI/main/install.ps1 | iex"
 ```
 
-> This handles **everything** — Python 3.11, Ollama, model downloads, dependencies, the works. Just sit back.
+> This interactive installer handles **everything** — Python, Ollama, model downloads, NVIDIA GPU setup, desktop shortcut — the works. Just answer a few questions and sit back.
 
-### 2️⃣ Launch NovaAI
+### 🔧 Already have the repo?
 
 ```powershell
-# 🖥️ Desktop GUI (recommended)
-.\launch_gui.bat
-
-# ⌨️ Terminal mode
-.\.venv\Scripts\python.exe app.py
+python setup.py
 ```
 
-### 3️⃣ (Optional) GPU boost for faster voice
+First run does the full setup, then launches the GUI. Subsequent runs skip straight to launch.
 
-Got an NVIDIA GPU? Make voice replies fly:
+### 📋 All commands
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchcodec
+python setup.py              # Setup (if needed) + launch GUI
+python setup.py --launch     # 🖥️ Launch GUI
+python setup.py --terminal   # ⌨️ Terminal mode
+python setup.py --setup      # 🔧 Re-run setup only
+python setup.py --update     # 🔄 Check for updates
 ```
 
 ---
@@ -255,9 +257,8 @@ Copy `.env.example` to `.env` and tweak what you need:
 ```
 NovaAI/
 ├── app.py                    # 🚪 Entry point
-├── setup.bat                 # 🔧 One-click Windows setup
-├── launch_gui.bat            # 🖥️ Launch the desktop GUI
-├── update.bat                # 🔄 Manual update
+├── setup.py                  # 🔧 Setup, launch, and update — all in one
+├── install.ps1               # ⚡ One-line PowerShell installer
 ├── requirements.txt          # 📦 Python dependencies
 ├── VERSION                   # 🏷️ Current version
 ├── .env.example              # ⚙️ Configuration template
@@ -396,7 +397,7 @@ NovaAI can check for and install updates from GitHub:
 **Safety guards:**
 - Git checkouts with local edits are **never** auto-updated
 - Update results are cached for `AUTO_UPDATE_CACHE_SECONDS` (default: 6 hours) to avoid hammering GitHub
-- Manual updates always available via `.\update.bat`
+- Manual updates always available via `python setup.py --update`
 
 </details>
 
@@ -421,7 +422,7 @@ In-app playback uses `ffplay` for radio streams and resolved audio URLs.
 
 ## 💡 Good to Know
 
-- 📥 **First run downloads models** — XTTS-v2 and faster-whisper grab model files on first use. `setup.bat` preloads them so you're not waiting forever.
+- 📥 **First run downloads models** — XTTS-v2 and faster-whisper grab model files on first use. `python setup.py` preloads them so you're not waiting forever.
 - 🔇 **Mic mute is app-level** — it stops NovaAI from listening. It doesn't touch your Windows system mic.
 - 🔒 **Git-safe updates** — if NovaAI detects a git checkout with local edits, self-update is skipped to protect your work.
 - 💾 **Audio is always saved** — voice replies land in `audio/latest_reply.wav` even if playback fails. Useful for debugging.

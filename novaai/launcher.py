@@ -20,7 +20,7 @@ from .updater import (
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 SETUP_MARKER = ROOT_DIR / ".setup-complete"
-SETUP_SCRIPT = ROOT_DIR / "setup.bat"
+SETUP_PY = ROOT_DIR / "setup.py"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,12 +38,12 @@ def ensure_windows_setup() -> None:
         return
     if SETUP_MARKER.exists():
         return
-    if not SETUP_SCRIPT.exists():
+    if not SETUP_PY.exists():
         return
 
-    print("First-time NovaAI setup is incomplete. Running setup.bat...")
+    print("First-time NovaAI setup is incomplete. Running setup...")
     result = subprocess.run(
-        ["cmd", "/c", str(SETUP_SCRIPT)],
+        [sys.executable, str(SETUP_PY), "--setup"],
         cwd=str(ROOT_DIR),
         check=False,
     )
@@ -78,7 +78,7 @@ def maybe_apply_startup_update() -> None:
     if not get_auto_update_install_enabled():
         print(
             f"NovaAI {status.remote_version} is available on GitHub. "
-            "Run .\\update.bat when you want to install it."
+            "Run `python setup.py --update` when you want to install it."
         )
         return
 
