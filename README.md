@@ -4,7 +4,7 @@
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.0-violet)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.0.0-violet)](VERSION)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows)](https://microsoft.com)
 
 NovaAI is a voice-powered desktop companion built with Python. It listens through your mic, thinks with local or cloud LLMs, and speaks back with a cloned voice — all wrapped in a slick dark-themed UI.
