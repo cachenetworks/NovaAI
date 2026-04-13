@@ -668,6 +668,22 @@ class Api:
 
     # ── reminder checker (background thread) ──────────────────────────────────
 
+    def _push_alert(self, msg: str) -> None:
+        """Push an alarm/reminder notification with sound to the frontend."""
+        safe = json.dumps(msg)
+        self._js(f"window.__onAlertNotification({safe})")
+
+    def _speak_alert(self, text: str) -> None:
+        """Speak an alert message via TTS if voice is enabled."""
+        if not self._initialized or not self.config:
+            return
+        try:
+            audio_path = speak_text(text, self.config, self.state)
+            if should_play_audio_after_synthesis(self.config):
+                play_audio_file(audio_path, self.config.speaker_device_index)
+        except Exception:
+            pass
+
     def start_reminder_checker(self) -> None:
         def _checker():
             while True:
@@ -676,13 +692,15 @@ class Api:
                     fired = check_due_reminders(self.profile)
                     for r in fired:
                         msg = r.get("title", "Reminder!")
-                        self._push_notification(f"Reminder: {msg}")
-                        self._push_chat("System", f"Reminder: {msg}", "system")
+                        self._push_alert(f"Reminder: {msg}")
+                        self._push_chat("System", f"\u23f0 Reminder: {msg}", "system")
+                        self._speak_alert(f"Reminder: {msg}")
                     fired_alarms = check_due_alarms(self.profile)
                     for a in fired_alarms:
                         label = a.get("label", "Alarm!")
-                        self._push_notification(f"Alarm: {label}")
-                        self._push_chat("System", f"Alarm: {label}", "system")
+                        self._push_alert(f"Alarm: {label}")
+                        self._push_chat("System", f"\u23f0 Alarm: {label}", "system")
+                        self._speak_alert(f"Alarm: {label}")
                     if fired or fired_alarms:
                         self.profile = save_profile_by_id(
                             self.active_profile_id, self.profile
