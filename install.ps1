@@ -441,24 +441,47 @@ function Ask-GPU {
     Write-Step "6/7" "GPU acceleration..."
 
     $choice = Ask-Choice "Do you have an NVIDIA GPU for faster voice synthesis?" @(
-        "Yes — install CUDA-accelerated PyTorch (recommended for NVIDIA GPUs)",
+        "Yes — install CUDA-accelerated PyTorch",
         "No  — stick with CPU-only (works fine, just slower voice)",
         "Skip — I'll decide later"
     ) 0  # default to Yes
 
     if ($choice -eq 0) {
-        Write-Info "Installing CUDA-enabled PyTorch... (this downloads ~2 GB)"
+        Write-Host ""
+        Write-Info "Pick the CUDA version that matches your GPU and driver."
+        Write-Info "Not sure? Choose CUDA 12.8 — it works with most modern GPUs."
+        Write-Info "Older GPUs (GTX 900/1000 series) or old drivers may need 11.8."
+        Write-Host ""
+
+        $cudaChoice = Ask-Choice "Which CUDA version?" @(
+            "CUDA 12.8  — latest, RTX 20/30/40/50 series (driver 570+)",
+            "CUDA 12.6  — stable, RTX 20/30/40 series (driver 560+)",
+            "CUDA 12.4  — safe bet for most GPUs (driver 550+)",
+            "CUDA 12.1  — older driver compat (driver 530+)",
+            "CUDA 11.8  — legacy, GTX 900/1000 or very old drivers (driver 520+)"
+        ) 0
+
+        $cudaUrl = switch ($cudaChoice) {
+            0 { "https://download.pytorch.org/whl/cu128" }
+            1 { "https://download.pytorch.org/whl/cu126" }
+            2 { "https://download.pytorch.org/whl/cu124" }
+            3 { "https://download.pytorch.org/whl/cu121" }
+            4 { "https://download.pytorch.org/whl/cu118" }
+        }
+        $cudaLabel = @("12.8", "12.6", "12.4", "12.1", "11.8")[$cudaChoice]
+
+        Write-Info "Installing CUDA $cudaLabel PyTorch... (this downloads ~2 GB)"
         $venvPython = "$INSTALL_DIR\.venv\Scripts\python.exe"
-        $pipExit = Invoke-Native "`"$venvPython`" -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchcodec -q"
+        $pipExit = Invoke-Native "`"$venvPython`" -m pip install --upgrade --index-url $cudaUrl torch torchaudio -q"
         if ($pipExit -eq 0) {
-            Write-Ok "CUDA PyTorch installed. Voice synthesis will be much faster!"
+            Write-Ok "CUDA $cudaLabel PyTorch installed. Voice synthesis will be much faster!"
         } else {
             Write-Warn "CUDA install had issues. CPU mode will still work fine."
         }
     } elseif ($choice -eq 1) {
         Write-Ok "Using CPU mode. You can add GPU support later."
         Write-Info "To add GPU later, run:"
-        Write-Info "  $INSTALL_DIR\.venv\Scripts\python.exe -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio torchcodec"
+        Write-Info "  $INSTALL_DIR\.venv\Scripts\python.exe -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio"
     } else {
         Write-Ok "Skipped. Default CPU mode works out of the box."
     }
