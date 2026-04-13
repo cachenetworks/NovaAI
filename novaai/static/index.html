@@ -490,6 +490,7 @@ const api = () => window.pywebview ? window.pywebview.api : null;
 
 let STATE = {};
 let currentPage = 'dashboard';
+let _appReady = false;  // true once initialize() has returned
 const LOADER_START = Date.now();
 const LOADER_MIN_MS = 3000; // minimum time the loading screen is shown
 
@@ -581,7 +582,8 @@ function showPage(key) {
   $('page-title').textContent = title;
   $('page-sub').textContent = sub;
 
-  // Refresh data when switching
+  // Refresh data when switching (only after backend is ready)
+  if (!_appReady) return;
   if (key === 'reminders')  loadReminders();
   if (key === 'calendar')   loadCalendar();
   if (key === 'shopping')   loadShopping();
@@ -759,12 +761,13 @@ async function doListenFromChat() {
 // ── Dashboard actions ────────────────────────────────────────────────────
 
 async function doStartSession() {
+  if (!_appReady) return;
   $('d-btn-session').disabled = true;
   try { await api().start_session(); } catch(e) { console.error(e); }
 }
 
 async function doToggle(key) {
-  if (_syncingSettings) return;
+  if (_syncingSettings || !_appReady) return;
   try {
     if (key === 'voice')      await api().toggle_voice();
     if (key === 'handsfree')  await api().toggle_handsfree();
@@ -774,7 +777,7 @@ async function doToggle(key) {
 }
 
 async function doToggleAutoSearch() {
-  if (_syncingSettings) return;
+  if (_syncingSettings || !_appReady) return;
   try { await api().toggle_auto_search(); } catch(e) { console.error(e); }
 }
 
@@ -784,6 +787,7 @@ async function doListen() {
 }
 
 async function doRecalibrate() {
+  if (!_appReady) return;
   try { await api().recalibrate_mic(); } catch(e) { console.error(e); }
 }
 
@@ -980,6 +984,7 @@ async function doDeleteProfile(id) {
 // ── Settings: audio ──────────────────────────────────────────────────────
 
 async function doRefreshAudio() {
+  if (!_appReady) return;
   try {
     const d = await api().get_audio_devices();
     const micSel = $('set-mic-select');
@@ -990,6 +995,7 @@ async function doRefreshAudio() {
 }
 
 async function doApplyAudio() {
+  if (!_appReady) return;
   const mic = $('set-mic-select').value || null;
   const spk = $('set-spk-select').value || null;
   try { const r = await api().apply_audio_devices(mic, spk); if (r.msg) showNotification(r.msg); } catch(e) { console.error(e); }
@@ -1050,7 +1056,10 @@ async function init() {
     if (e.key === 'F8') { e.preventDefault(); doListen(); }
   });
 
-  // Dismiss loading screen — the app is ready
+  // App is now fully initialized — unlock UI and dismiss loading screen
+  _appReady = true;
+  syncDashboard();
+  syncSettings();
   dismissLoader();
 }
 
