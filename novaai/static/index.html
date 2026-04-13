@@ -162,97 +162,82 @@ tailwind.config = {
       <!-- ═══════════════════════════════════════════════════════════════ -->
       <!-- PAGE: Dashboard -->
       <!-- ═══════════════════════════════════════════════════════════════ -->
-      <div id="page-dashboard" class="page active flex-col h-full overflow-y-auto p-6 gap-5">
+      <div id="page-dashboard" class="page active flex-col h-full overflow-hidden">
 
-        <!-- Stat cards -->
-        <div class="grid grid-cols-4 gap-3">
-          <div class="card p-4">
-            <div id="d-stat-session" class="text-xl font-bold text-nova-muted2">Standby</div>
-            <div class="text-[10px] text-nova-muted font-medium tracking-wider uppercase mt-0.5">Session</div>
-          </div>
-          <div class="card p-4">
-            <div id="d-stat-model" class="text-xl font-bold text-nova-text truncate">--</div>
-            <div class="text-[10px] text-nova-muted font-medium tracking-wider uppercase mt-0.5">Model</div>
-          </div>
-          <div class="card p-4">
-            <div id="d-stat-mode" class="text-xl font-bold text-nova-text">Text</div>
-            <div class="text-[10px] text-nova-muted font-medium tracking-wider uppercase mt-0.5">Input Mode</div>
-          </div>
-          <div class="card p-4">
-            <div id="d-stat-status" class="text-sm font-semibold text-nova-text truncate">Ready</div>
-            <div class="text-[10px] text-nova-muted font-medium tracking-wider uppercase mt-0.5">Status</div>
-          </div>
-        </div>
+        <!-- Top strip: stats + session + controls -->
+        <div class="flex-shrink-0 p-4 pb-0 space-y-3">
 
-        <!-- Session button -->
-        <button id="d-btn-session" onclick="doStartSession()" class="w-full py-3.5 rounded-lg font-bold text-sm tracking-wide btn-primary transition-all">
-          Start Session
-        </button>
+          <!-- Row 1: stat cards + session button -->
+          <div class="flex gap-3 items-stretch">
+            <div class="card p-3 flex-1 min-w-0">
+              <div id="d-stat-session" class="text-lg font-bold text-nova-muted2 truncate">Standby</div>
+              <div class="text-[10px] text-nova-muted font-medium tracking-wider uppercase">Session</div>
+            </div>
+            <div class="card p-3 flex-1 min-w-0">
+              <div id="d-stat-model" class="text-lg font-bold text-nova-text truncate">--</div>
+              <div class="text-[10px] text-nova-muted font-medium tracking-wider uppercase">Model</div>
+            </div>
+            <div class="card p-3 flex-1 min-w-0">
+              <div id="d-stat-mode" class="text-lg font-bold text-nova-text truncate">Text</div>
+              <div class="text-[10px] text-nova-muted font-medium tracking-wider uppercase">Input Mode</div>
+            </div>
+            <button id="d-btn-session" onclick="doStartSession()" class="btn-primary px-6 rounded-lg font-bold text-[13px] tracking-wide transition-all whitespace-nowrap">
+              Start Session
+            </button>
+          </div>
 
-        <!-- Two columns: controls + actions -->
-        <div class="grid grid-cols-5 gap-4 flex-1 min-h-0">
-
-          <!-- Controls (left 3 cols) -->
-          <div class="col-span-3 card overflow-hidden flex flex-col">
-            <div class="px-5 pt-4 pb-2 text-[13px] font-bold text-nova-text">Controls</div>
-            <div class="flex-1 divide-y divide-nova-border">
-              <!-- Voice -->
-              <div class="flex items-center gap-4 px-5 py-3">
-                <div id="d-dot-voice" class="w-2.5 h-2.5 rounded-full bg-nova-muted flex-shrink-0"></div>
-                <div class="flex-1 min-w-0">
-                  <div class="text-[13px] font-medium text-nova-text">Voice Replies</div>
-                  <div class="text-[11px] text-nova-muted">Spoken TTS output</div>
-                </div>
-                <span id="d-val-voice" class="text-[12px] font-semibold text-nova-muted w-10 text-right">OFF</span>
-                <button onclick="doToggle('voice')" class="btn-secondary text-[11px] px-3 py-1.5 rounded-md font-medium">Toggle</button>
-              </div>
-              <!-- Hands-Free -->
-              <div class="flex items-center gap-4 px-5 py-3">
-                <div id="d-dot-hf" class="w-2.5 h-2.5 rounded-full bg-nova-muted flex-shrink-0"></div>
-                <div class="flex-1 min-w-0">
-                  <div class="text-[13px] font-medium text-nova-text">Hands-Free</div>
-                  <div class="text-[11px] text-nova-muted">Auto-listen after each reply</div>
-                </div>
-                <span id="d-val-hf" class="text-[12px] font-semibold text-nova-muted w-10 text-right">OFF</span>
-                <button onclick="doToggle('handsfree')" class="btn-secondary text-[11px] px-3 py-1.5 rounded-md font-medium">Toggle</button>
-              </div>
-              <!-- Mic -->
-              <div class="flex items-center gap-4 px-5 py-3">
-                <div id="d-dot-mic" class="w-2.5 h-2.5 rounded-full bg-emerald-500 flex-shrink-0"></div>
-                <div class="flex-1 min-w-0">
-                  <div class="text-[13px] font-medium text-nova-text">Microphone</div>
-                  <div class="text-[11px] text-nova-muted">App-level mic control</div>
-                </div>
-                <span id="d-val-mic" class="text-[12px] font-semibold text-emerald-400 w-12 text-right">LIVE</span>
-                <button onclick="doToggle('mic')" class="btn-secondary text-[11px] px-3 py-1.5 rounded-md font-medium">Toggle</button>
-              </div>
-              <!-- Web Search -->
-              <div class="flex items-center gap-4 px-5 py-3">
-                <div id="d-dot-web" class="w-2.5 h-2.5 rounded-full bg-emerald-500 flex-shrink-0"></div>
-                <div class="flex-1 min-w-0">
-                  <div class="text-[13px] font-medium text-nova-text">Web Search</div>
-                  <div class="text-[11px] text-nova-muted">Let the LLM search the web</div>
-                </div>
-                <span id="d-val-web" class="text-[12px] font-semibold text-emerald-400 w-10 text-right">ON</span>
-                <button onclick="doToggle('web_search')" class="btn-secondary text-[11px] px-3 py-1.5 rounded-md font-medium">Toggle</button>
-              </div>
+          <!-- Row 2: compact controls bar -->
+          <div class="card flex items-center divide-x divide-nova-border overflow-hidden">
+            <!-- Voice -->
+            <button onclick="doToggle('voice')" class="flex items-center gap-2 px-4 py-2.5 hover:bg-nova-surface2 transition-colors flex-1 min-w-0">
+              <div id="d-dot-voice" class="w-2 h-2 rounded-full bg-nova-muted flex-shrink-0"></div>
+              <span class="text-[12px] font-medium text-nova-text truncate">Voice</span>
+              <span id="d-val-voice" class="text-[11px] font-semibold text-nova-muted ml-auto">OFF</span>
+            </button>
+            <!-- Hands-Free -->
+            <button onclick="doToggle('handsfree')" class="flex items-center gap-2 px-4 py-2.5 hover:bg-nova-surface2 transition-colors flex-1 min-w-0">
+              <div id="d-dot-hf" class="w-2 h-2 rounded-full bg-nova-muted flex-shrink-0"></div>
+              <span class="text-[12px] font-medium text-nova-text truncate">Hands-Free</span>
+              <span id="d-val-hf" class="text-[11px] font-semibold text-nova-muted ml-auto">OFF</span>
+            </button>
+            <!-- Mic -->
+            <button onclick="doToggle('mic')" class="flex items-center gap-2 px-4 py-2.5 hover:bg-nova-surface2 transition-colors flex-1 min-w-0">
+              <div id="d-dot-mic" class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></div>
+              <span class="text-[12px] font-medium text-nova-text truncate">Mic</span>
+              <span id="d-val-mic" class="text-[11px] font-semibold text-emerald-400 ml-auto">LIVE</span>
+            </button>
+            <!-- Web -->
+            <button onclick="doToggle('web_search')" class="flex items-center gap-2 px-4 py-2.5 hover:bg-nova-surface2 transition-colors flex-1 min-w-0">
+              <div id="d-dot-web" class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></div>
+              <span class="text-[12px] font-medium text-nova-text truncate">Web</span>
+              <span id="d-val-web" class="text-[11px] font-semibold text-emerald-400 ml-auto">ON</span>
+            </button>
+            <!-- Quick actions -->
+            <div class="flex items-center gap-1.5 px-3 py-2 flex-shrink-0">
+              <button id="d-btn-listen" onclick="doListen()" class="btn-secondary text-[11px] px-2.5 py-1.5 rounded-md font-medium" disabled>Listen</button>
+              <button onclick="doRecalibrate()" class="btn-secondary text-[11px] px-2.5 py-1.5 rounded-md font-medium">Calibrate</button>
+              <button onclick="doPerformance()" class="btn-secondary text-[11px] px-2.5 py-1.5 rounded-md font-medium">Perf</button>
             </div>
           </div>
 
-          <!-- Quick actions (right 2 cols) -->
-          <div class="col-span-2 card flex flex-col p-5 gap-2">
-            <div class="text-[13px] font-bold text-nova-text mb-1">Quick Actions</div>
-            <button id="d-btn-listen" onclick="doListen()" class="btn-secondary rounded-lg py-2.5 text-[12px] font-medium w-full" disabled>Listen Now</button>
-            <button onclick="doRecalibrate()" class="btn-secondary rounded-lg py-2.5 text-[12px] font-medium w-full">Recalibrate Mic</button>
-            <button onclick="doClearHistory()" class="btn-secondary rounded-lg py-2.5 text-[12px] font-medium w-full">Clear History</button>
-            <button onclick="doPerformance()" class="btn-secondary rounded-lg py-2.5 text-[12px] font-medium w-full">Performance Info</button>
+          <!-- Companion info bar -->
+          <div class="flex items-center gap-3 px-1">
+            <div id="d-companion" class="text-[12px] font-semibold text-nova-text flex-shrink-0">NovaAI</div>
+            <div id="d-description" class="text-[11px] text-nova-muted truncate">--</div>
+            <div class="ml-auto flex-shrink-0">
+              <button onclick="doClearHistory()" class="text-[11px] text-nova-muted hover:text-red-400 transition-colors">Clear history</button>
+            </div>
           </div>
         </div>
 
-        <!-- Companion info -->
-        <div class="card px-5 py-3 flex items-center gap-4">
-          <div id="d-companion" class="text-sm font-semibold text-nova-text flex-shrink-0">NovaAI</div>
-          <div id="d-description" class="text-[12px] text-nova-muted truncate">--</div>
+        <!-- Chat feed (fills remaining space) -->
+        <div class="flex-1 overflow-y-auto px-4 pt-2 pb-2 space-y-2" id="dash-chat-log"></div>
+
+        <!-- Chat input -->
+        <div class="flex-shrink-0 flex gap-2 p-4 border-t border-nova-border bg-nova-surface">
+          <input id="dash-chat-input" type="text" placeholder="Type a message..." class="flex-1" onkeydown="if(event.key==='Enter')doDashSend()" />
+          <button id="dash-send-btn" onclick="doDashSend()" class="btn-primary px-5 py-2 rounded-lg text-[13px] font-semibold">Send</button>
+          <button id="dash-listen-btn" onclick="doListenFromChat()" class="btn-secondary px-4 py-2 rounded-lg text-[13px] font-semibold" title="Voice input (F8)">Mic</button>
         </div>
       </div>
 
@@ -601,13 +586,13 @@ function syncDashboard() {
   const sessionEl = $('d-stat-session');
   if (s.busy) {
     sessionEl.textContent = 'Busy';
-    sessionEl.className = 'text-xl font-bold text-amber-400';
+    sessionEl.className = 'text-lg font-bold text-amber-400 truncate';
   } else if (s.session_started) {
     sessionEl.textContent = 'Active';
-    sessionEl.className = 'text-xl font-bold text-emerald-400';
+    sessionEl.className = 'text-lg font-bold text-emerald-400 truncate';
   } else {
     sessionEl.textContent = 'Standby';
-    sessionEl.className = 'text-xl font-bold text-nova-muted2';
+    sessionEl.className = 'text-lg font-bold text-nova-muted2 truncate';
   }
   $('d-stat-model').textContent = s.model || '--';
   $('d-stat-mode').textContent = s.hands_free ? 'Voice' : 'Text';
@@ -617,12 +602,12 @@ function syncDashboard() {
   // Session button
   const btn = $('d-btn-session');
   if (s.session_started) {
-    btn.textContent = 'Session Running';
-    btn.className = 'w-full py-3.5 rounded-lg font-bold text-sm tracking-wide btn-success transition-all cursor-default';
+    btn.textContent = 'Running';
+    btn.className = 'btn-success px-6 rounded-lg font-bold text-[13px] tracking-wide transition-all cursor-default whitespace-nowrap';
     btn.disabled = true;
   } else {
     btn.textContent = 'Start Session';
-    btn.className = 'w-full py-3.5 rounded-lg font-bold text-sm tracking-wide btn-primary transition-all';
+    btn.className = 'btn-primary px-6 rounded-lg font-bold text-[13px] tracking-wide transition-all whitespace-nowrap';
     btn.disabled = s.busy;
   }
 
@@ -632,7 +617,7 @@ function syncDashboard() {
   setToggleMic(s.mic_muted);
   setToggleUI('web',   s.web_search,    'ON', 'OFF');
 
-  // Listen button
+  // Listen buttons
   $('d-btn-listen').disabled = !s.session_started || s.busy || s.mic_muted;
 
   // Status bar
@@ -640,24 +625,32 @@ function syncDashboard() {
   $('sb-voice').textContent   = 'Voice: '   + (s.voice_enabled ? 'On' : 'Off');
   $('sb-mode').textContent    = 'Mode: '    + (s.hands_free ? 'Voice' : 'Text');
 
-  // Chat controls
+  // Chat page controls
   const chatInput = $('chat-input');
   const chatSend  = $('chat-send-btn');
   const chatListen = $('chat-listen-btn');
   if (chatInput) chatInput.disabled = !s.session_started || s.busy;
   if (chatSend)  chatSend.disabled  = !s.session_started || s.busy;
   if (chatListen) chatListen.disabled = !s.session_started || s.busy || s.mic_muted;
+
+  // Dashboard chat controls
+  const dashInput  = $('dash-chat-input');
+  const dashSend   = $('dash-send-btn');
+  const dashListen = $('dash-listen-btn');
+  if (dashInput)  dashInput.disabled  = !s.session_started || s.busy;
+  if (dashSend)   dashSend.disabled   = !s.session_started || s.busy;
+  if (dashListen) dashListen.disabled  = !s.session_started || s.busy || s.mic_muted;
 }
 
 function setToggleUI(key, on, onLabel, offLabel) {
   const dot = $('d-dot-' + key);
   const val = $('d-val-' + key);
   if (dot) {
-    dot.className = 'w-2.5 h-2.5 rounded-full flex-shrink-0 ' + (on ? 'bg-emerald-500' : 'bg-nova-muted');
+    dot.className = 'w-2 h-2 rounded-full flex-shrink-0 ' + (on ? 'bg-emerald-500' : 'bg-nova-muted');
   }
   if (val) {
     val.textContent = on ? onLabel : offLabel;
-    val.className = 'text-[12px] font-semibold w-12 text-right ' + (on ? 'text-emerald-400' : 'text-nova-muted');
+    val.className = 'text-[11px] font-semibold ml-auto ' + (on ? 'text-emerald-400' : 'text-nova-muted');
   }
 }
 
@@ -665,11 +658,11 @@ function setToggleMic(muted) {
   const dot = $('d-dot-mic');
   const val = $('d-val-mic');
   if (dot) {
-    dot.className = 'w-2.5 h-2.5 rounded-full flex-shrink-0 ' + (muted ? 'bg-red-400' : 'bg-emerald-500');
+    dot.className = 'w-2 h-2 rounded-full flex-shrink-0 ' + (muted ? 'bg-red-400' : 'bg-emerald-500');
   }
   if (val) {
     val.textContent = muted ? 'MUTED' : 'LIVE';
-    val.className = 'text-[12px] font-semibold w-12 text-right ' + (muted ? 'text-red-400' : 'text-emerald-400');
+    val.className = 'text-[11px] font-semibold ml-auto ' + (muted ? 'text-red-400' : 'text-emerald-400');
   }
 }
 
@@ -724,15 +717,23 @@ window.__onFeaturesChanged = function() {
 
 // ── Chat ─────────────────────────────────────────────────────────────────
 
-function appendChat(author, text, role) {
-  const log = $('chat-log');
+function _buildBubble(author, text, role) {
   const div = document.createElement('div');
   const bubbleClass = role === 'user' ? 'chat-bubble-user' : role === 'assistant' ? 'chat-bubble-assistant' : 'chat-bubble-system';
   const authorColor = role === 'user' ? 'text-amber-400' : role === 'assistant' ? 'text-blue-300' : 'text-gray-400';
   div.className = `${bubbleClass} rounded-lg px-4 py-3 fade-in`;
   div.innerHTML = `<div class="${authorColor} text-[11px] font-semibold tracking-wide mb-1">${escHtml(author)}</div><div class="text-[13px] leading-relaxed text-nova-text whitespace-pre-wrap">${escHtml(text)}</div>`;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+function appendChat(author, text, role) {
+  // Write to both the Chat page log and the Dashboard chat log
+  const targets = [$('chat-log'), $('dash-chat-log')];
+  for (const log of targets) {
+    if (!log) continue;
+    log.appendChild(_buildBubble(author, text, role));
+    log.scrollTop = log.scrollHeight;
+  }
 }
 
 function escHtml(s) {
@@ -753,8 +754,23 @@ async function doSend() {
   } catch(e) { console.error(e); }
 }
 
+async function doDashSend() {
+  const inp = $('dash-chat-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  inp.disabled = true;
+  $('dash-send-btn').disabled = true;
+  try {
+    await api().send_message(text);
+  } catch(e) { console.error(e); }
+}
+
 async function doListenFromChat() {
-  $('chat-listen-btn').disabled = true;
+  const btn = $('chat-listen-btn');
+  const btn2 = $('dash-listen-btn');
+  if (btn) btn.disabled = true;
+  if (btn2) btn2.disabled = true;
   try { await api().start_listen(); } catch(e) { console.error(e); }
 }
 
