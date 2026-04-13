@@ -135,32 +135,20 @@ function Set-EnvValue {
 
 function Show-Banner {
     Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Magenta
-    Write-Host "  ║                                                      ║" -ForegroundColor Magenta
-    Write-Host "  ║   " -ForegroundColor Magenta -NoNewline
-    Write-Host "  _   _                    _    ___  " -ForegroundColor White -NoNewline
-    Write-Host "       ║" -ForegroundColor Magenta
-    Write-Host "  ║   " -ForegroundColor Magenta -NoNewline
-    Write-Host " | \ | |  ___  __   ____ _| |  /   | " -ForegroundColor White -NoNewline
-    Write-Host "       ║" -ForegroundColor Magenta
-    Write-Host "  ║   " -ForegroundColor Magenta -NoNewline
-    Write-Host " |  \| | / _ \ \ \ / / _`` | | / /| | " -ForegroundColor White -NoNewline
-    Write-Host "       ║" -ForegroundColor Magenta
-    Write-Host "  ║   " -ForegroundColor Magenta -NoNewline
-    Write-Host " | |\  || (_) | \ V / (_| | |/ /_| | " -ForegroundColor White -NoNewline
-    Write-Host "       ║" -ForegroundColor Magenta
-    Write-Host "  ║   " -ForegroundColor Magenta -NoNewline
-    Write-Host " |_| \_| \___/   \_/ \__,_|_|\___,_| " -ForegroundColor White -NoNewline
-    Write-Host "       ║" -ForegroundColor Magenta
-    Write-Host "  ║                                                      ║" -ForegroundColor Magenta
-    Write-Host "  ║   " -ForegroundColor Magenta -NoNewline
-    Write-Host "  Your AI companion, built to vibe with you  " -ForegroundColor DarkGray -NoNewline
-    Write-Host "       ║" -ForegroundColor Magenta
-    Write-Host "  ║                                                      ║" -ForegroundColor Magenta
-    Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Magenta
+    Write-Host "                 o   o   o" -ForegroundColor DarkMagenta
+    Write-Host "                 |   |   |" -ForegroundColor DarkMagenta
+    Write-Host "             o--+-----------+--o" -ForegroundColor DarkMagenta
+    Write-Host "             " -NoNewline; Write-Host "o--" -ForegroundColor DarkMagenta -NoNewline; Write-Host "|" -ForegroundColor Magenta -NoNewline; Write-Host "  N o v a  " -ForegroundColor White -NoNewline; Write-Host "|" -ForegroundColor Magenta -NoNewline; Write-Host "--o" -ForegroundColor DarkMagenta
+    Write-Host "             " -NoNewline; Write-Host "o--" -ForegroundColor DarkMagenta -NoNewline; Write-Host "|" -ForegroundColor Magenta -NoNewline; Write-Host "    A I    " -ForegroundColor Cyan -NoNewline; Write-Host "|" -ForegroundColor Magenta -NoNewline; Write-Host "--o" -ForegroundColor DarkMagenta
+    Write-Host "             " -NoNewline; Write-Host "o--" -ForegroundColor DarkMagenta -NoNewline; Write-Host "|" -ForegroundColor Magenta -NoNewline; Write-Host "  " -NoNewline; Write-Host "[" -ForegroundColor DarkGray -NoNewline; Write-Host " *** " -ForegroundColor Magenta -NoNewline; Write-Host "]" -ForegroundColor DarkGray -NoNewline; Write-Host "  " -NoNewline; Write-Host "|" -ForegroundColor Magenta -NoNewline; Write-Host "--o" -ForegroundColor DarkMagenta
+    Write-Host "             o--+-----------+--o" -ForegroundColor DarkMagenta
+    Write-Host "                 |   |   |" -ForegroundColor DarkMagenta
+    Write-Host "                 o   o   o" -ForegroundColor DarkMagenta
     Write-Host ""
-    Write-Host "    This installer will set up everything you need." -ForegroundColor DarkGray
-    Write-Host "    Grab a coffee — this might take a few minutes." -ForegroundColor DarkGray
+    Write-Host "        Your AI companion, built to vibe with you" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "        This installer will set up everything you need." -ForegroundColor DarkGray
+    Write-Host "        Grab a coffee -- this might take a few minutes." -ForegroundColor DarkGray
     Write-Host ""
 }
 
