@@ -456,7 +456,7 @@ function Ask-GPU {
         "Yes — install CUDA-accelerated PyTorch (recommended for NVIDIA GPUs)",
         "No  — stick with CPU-only (works fine, just slower voice)",
         "Skip — I'll decide later"
-    ) 2  # default to Skip
+    ) 0  # default to Yes
 
     if ($choice -eq 0) {
         Write-Info "Installing CUDA-enabled PyTorch... (this downloads ~2 GB)"
