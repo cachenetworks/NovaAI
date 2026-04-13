@@ -1,4 +1,8 @@
-# 🤖 NovaAI
+<div align="center">
+  <img src="data/logo.png" alt="NovaAI" width="180">
+</div>
+
+# NovaAI
 
 ### *Your brutally honest AI companion that actually talks back.*
 
@@ -264,6 +268,8 @@ NovaAI/
 ├── .env.example              # ⚙️ Configuration template
 │
 ├── data/
+│   ├── logo.png              # 🎨 NovaAI logo
+│   ├── logo.ico              # 🎨 Window icon
 │   ├── novaai.db             # 🗄️ SQLite database (runtime)
 │   └── profile.example.json  # 📝 Example profile
 │

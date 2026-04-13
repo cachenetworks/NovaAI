@@ -112,6 +112,7 @@ tailwind.config = {
 <!-- LOADING SCREEN -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div id="loading-screen">
+  <img src="logo.png" alt="NovaAI" class="w-28 h-28 mb-4 drop-shadow-lg" draggable="false">
   <div class="mb-6 text-center">
     <div class="text-3xl font-extrabold text-white tracking-tight">Nova<span class="text-violet-400">AI</span></div>
     <div class="text-[11px] text-nova-muted tracking-widest mt-1">AI COMPANION STUDIO</div>
@@ -128,9 +129,12 @@ tailwind.config = {
 
   <!-- ── Sidebar ── -->
   <nav id="sidebar" class="flex flex-col w-52 min-w-[208px] bg-nova-nav border-r border-nova-border flex-shrink-0">
-    <div class="px-5 py-4 border-b border-nova-border">
-      <div class="text-[17px] font-bold text-nova-text" id="nav-logo">NovaAI</div>
-      <div class="text-[10px] text-nova-muted tracking-wide">AI Companion Studio</div>
+    <div class="px-5 py-4 border-b border-nova-border flex items-center gap-3">
+      <img src="logo.png" alt="" class="w-9 h-9 rounded-lg drop-shadow" draggable="false">
+      <div>
+        <div class="text-[17px] font-bold text-nova-text" id="nav-logo">NovaAI</div>
+        <div class="text-[10px] text-nova-muted tracking-wide">AI Companion Studio</div>
+      </div>
     </div>
     <div class="flex-1 py-2 overflow-y-auto">
       <button onclick="showPage('dashboard')"  data-page="dashboard"  class="nav-item active w-full text-left px-5 py-2.5 text-[13px] text-nova-muted2 border-l-[3px] border-transparent flex items-center gap-2.5"><span class="w-5 text-center opacity-70">&#9636;</span> Dashboard</button>

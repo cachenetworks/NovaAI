@@ -79,6 +79,7 @@ from .web_search import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+ICON_PATH = Path(__file__).resolve().parent.parent / "data" / "logo.ico"
 _window: webview.Window | None = None
 
 
@@ -732,4 +733,5 @@ def main() -> None:
         text_select=True,
     )
     _window.events.loaded += _on_loaded
-    webview.start(debug=False)
+    icon = str(ICON_PATH) if ICON_PATH.exists() else None
+    webview.start(debug=False, icon=icon)
