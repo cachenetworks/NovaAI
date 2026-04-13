@@ -503,9 +503,9 @@ function Ask-Shortcut {
             $shortcut.WorkingDirectory = $INSTALL_DIR
             $shortcut.Description = "NovaAI - AI Companion Studio"
 
-            $pythonIcon = "$INSTALL_DIR\.venv\Scripts\python.exe"
-            if (Test-Path $pythonIcon) {
-                $shortcut.IconLocation = "$pythonIcon,0"
+            $icoPath = "$INSTALL_DIR\data\logo.ico"
+            if (Test-Path $icoPath) {
+                $shortcut.IconLocation = "$icoPath,0"
             }
 
             $shortcut.Save()
