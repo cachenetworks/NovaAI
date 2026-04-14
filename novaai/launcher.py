@@ -33,9 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def ensure_windows_setup() -> None:
-    if os.name != "nt":
-        return
+def ensure_setup() -> None:
     if SETUP_MARKER.exists():
         return
     if not SETUP_PY.exists():
@@ -98,7 +96,7 @@ def maybe_apply_startup_update() -> None:
 
 def main() -> None:
     args = build_parser().parse_args()
-    ensure_windows_setup()
+    ensure_setup()
     maybe_apply_startup_update()
     if args.gui:
         from .webgui import main as gui_main

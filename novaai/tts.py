@@ -141,7 +141,11 @@ def choose_compatible_output_device_index(
 
     hostapi_names = get_hostapi_names()
     selected_hostapi = resolve_output_hostapi_name(selected_device, hostapi_names)
-    if selected_hostapi not in {"Windows WASAPI", "Windows WDM-KS", "WDM-KS"}:
+    _EXCLUSIVE_HOSTAPIS = {
+        "Windows WASAPI", "Windows WDM-KS", "WDM-KS",
+        "JACK Audio Connection Kit", "JACK",
+    }
+    if selected_hostapi not in _EXCLUSIVE_HOSTAPIS:
         return output_device_index
 
     selected_key = output_device_name_key(str(selected_device.get("name", "")))
@@ -149,12 +153,21 @@ def choose_compatible_output_device_index(
         return output_device_index
 
     hostapi_priority = {
+        # Windows
         "Windows DirectSound": 0,
         "MME": 1,
         "Windows WASAPI": 2,
         "Windows WDM-KS": 3,
         "WDM-KS": 3,
         "ASIO": 4,
+        # Linux
+        "ALSA": 0,
+        "PulseAudio": 1,
+        "PipeWire": 1,
+        "JACK Audio Connection Kit": 2,
+        "JACK": 2,
+        # macOS
+        "Core Audio": 0,
     }
     best_index = output_device_index
     best_score = (hostapi_priority.get(selected_hostapi, 9), output_device_index)
@@ -186,13 +199,21 @@ def list_output_devices_compact(max_devices: int = 24) -> list[dict[str, Any]]:
     default_index = get_default_output_device_index()
     hostapi_names = get_hostapi_names()
     hostapi_priority = {
-        # Favor the shared-mode APIs first for compatibility.
+        # Windows — favor shared-mode APIs first for compatibility.
         "Windows DirectSound": 0,
         "MME": 1,
         "Windows WASAPI": 2,
         "WDM-KS": 3,
         "ASIO": 3,
         "Windows WDM-KS": 4,
+        # Linux
+        "ALSA": 0,
+        "PulseAudio": 1,
+        "PipeWire": 1,
+        "JACK Audio Connection Kit": 2,
+        "JACK": 2,
+        # macOS
+        "Core Audio": 0,
     }
     ignored_names = {
         "primary sound driver",
@@ -954,17 +975,8 @@ def play_wav_with_sounddevice(
         raise RuntimeError(f"Could not play audio on {selected}. {exc}") from exc
 
 
-def play_audio_file(
-    audio_path: Path,
-    output_device_index: int | None = None,
-) -> None:
-    if audio_path.suffix.lower() == ".wav":
-        play_wav_with_sounddevice(audio_path, output_device_index)
-        return
-
-    if os.name != "nt":
-        raise RuntimeError("Automatic audio playback is only implemented for Windows.")
-
+def _play_with_mci(audio_path: Path) -> None:
+    """Play audio via Windows MCI (Media Control Interface)."""
     alias = "ai_companion_audio"
     winmm = ctypes.windll.winmm
 
@@ -989,3 +1001,33 @@ def play_audio_file(
             send(f"close {alias}")
         except RuntimeError:
             pass
+
+
+def _play_with_ffplay(audio_path: Path) -> None:
+    """Play audio via ffplay (cross-platform fallback)."""
+    import shutil as _shutil
+    import subprocess as _subprocess
+
+    ffplay = _shutil.which("ffplay")
+    if not ffplay:
+        raise RuntimeError(
+            "ffplay not found. Install FFmpeg to enable audio playback on Linux."
+        )
+    _subprocess.run(
+        [ffplay, "-nodisp", "-autoexit", "-loglevel", "error", str(audio_path)],
+        check=True,
+    )
+
+
+def play_audio_file(
+    audio_path: Path,
+    output_device_index: int | None = None,
+) -> None:
+    if audio_path.suffix.lower() == ".wav":
+        play_wav_with_sounddevice(audio_path, output_device_index)
+        return
+
+    if os.name == "nt":
+        _play_with_mci(audio_path)
+    else:
+        _play_with_ffplay(audio_path)

@@ -83,18 +83,18 @@ def resolve_git_executable() -> str | None:
     if git_executable:
         return git_executable
 
-    if os.name != "nt":
-        return None
+    # Check common Windows install locations as fallback
+    if os.name == "nt":
+        candidate_paths = (
+            Path(r"C:\Program Files\Git\cmd\git.exe"),
+            Path(r"C:\Program Files\Git\bin\git.exe"),
+            Path(os.path.expandvars(r"%LocalAppData%\Programs\Git\cmd\git.exe")),
+            Path(os.path.expandvars(r"%LocalAppData%\Programs\Git\bin\git.exe")),
+        )
+        for candidate_path in candidate_paths:
+            if candidate_path.exists():
+                return str(candidate_path)
 
-    candidate_paths = (
-        Path(r"C:\Program Files\Git\cmd\git.exe"),
-        Path(r"C:\Program Files\Git\bin\git.exe"),
-        Path(os.path.expandvars(r"%LocalAppData%\Programs\Git\cmd\git.exe")),
-        Path(os.path.expandvars(r"%LocalAppData%\Programs\Git\bin\git.exe")),
-    )
-    for candidate_path in candidate_paths:
-        if candidate_path.exists():
-            return str(candidate_path)
     return None
 
 

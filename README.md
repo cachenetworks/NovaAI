@@ -8,8 +8,8 @@
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-violet)](VERSION)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows)](https://microsoft.com)
+[![Version](https://img.shields.io/badge/version-1.1.0-violet)](VERSION)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6?logo=windows&logoColor=white)](https://microsoft.com)
 
 NovaAI is a voice-powered desktop companion built with Python. It listens through your mic, thinks with local or cloud LLMs, and speaks back with a cloned voice — all wrapped in a slick dark-themed UI.
 
@@ -40,25 +40,31 @@ Think Alexa, but with *attitude* and zero cloud lock-in. 🔥
 
 ### ⚡ One-Line Install (fresh machine)
 
-Open PowerShell and paste:
+**Windows** — open PowerShell and paste:
 
 ```powershell
 powershell -c "irm https://raw.githubusercontent.com/cachenetworks/NovaAI/main/install.ps1 | iex"
 ```
 
-> This interactive installer handles **everything** — Python, LLM provider choice (Ollama, OpenAI, OpenRouter, LM Studio, or any custom endpoint), model downloads, NVIDIA GPU setup, desktop shortcut — the works. Just answer a few questions and sit back.
+**Linux** — open a terminal and paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cachenetworks/NovaAI/main/install.sh | bash
+```
+
+> Both installers handle **everything** — Python, LLM provider choice (Ollama, OpenAI, OpenRouter, LM Studio, or any custom endpoint), model downloads, NVIDIA GPU setup, desktop shortcut/launcher — the works. Just answer a few questions and sit back.
 
 ### 🔧 Already have the repo?
 
-```powershell
-python setup.py
+```bash
+python setup.py          # or python3 on Linux
 ```
 
 First run does the full setup, then launches the GUI. Subsequent runs skip straight to launch.
 
 ### 📋 All commands
 
-```powershell
+```bash
 python setup.py              # Setup (if needed) + launch GUI
 python setup.py --launch     # 🖥️ Launch GUI
 python setup.py --terminal   # ⌨️ Terminal mode
@@ -262,7 +268,8 @@ Copy `.env.example` to `.env` and tweak what you need:
 NovaAI/
 ├── app.py                    # 🚪 Entry point
 ├── setup.py                  # 🔧 Setup, launch, and update — all in one
-├── install.ps1               # ⚡ One-line PowerShell installer
+├── install.ps1               # ⚡ One-line PowerShell installer (Windows)
+├── install.sh                # 🐧 One-line bash installer (Linux)
 ├── requirements.txt          # 📦 Python dependencies
 ├── VERSION                   # 🏷️ Current version
 ├── .env.example              # ⚙️ Configuration template
@@ -457,41 +464,24 @@ PRs welcome! If you're not sure where to start, open an issue and we'll point yo
 
 ---
 
-## 🐧 Linux Support — To-Do
+## 🐧 Linux Support
 
-> NovaAI is currently **Windows-only**. Cross-platform (Linux + Windows) support is planned. Here's what needs doing:
+> NovaAI runs on both **Windows** and **Linux**. Here's the compatibility status:
 
-### 🔧 Python Code Changes
+### ✅ Done
 
-- [ ] **`setup.py`** — Detect platform for venv paths (`Scripts\python.exe` → `bin/python`)
-- [ ] **`setup.py`** — Guard `subprocess.DETACHED_PROCESS` / `CREATE_NO_WINDOW` flags (Windows-only)
-- [ ] **`setup.py`** — Ollama paths: use `shutil.which()` instead of `LOCALAPPDATA` on Linux
-- [ ] **`novaai/tts.py`** — MP3 playback uses Windows MCI (`winmm.dll`) — add Linux fallback (ffplay or `sounddevice`)
-- [ ] **`novaai/tts.py`** — Add Linux audio API names to host API priority (ALSA, PulseAudio, JACK)
-- [ ] **`novaai/updater.py`** — Remove `os.name != "nt"` guard so git detection works on Linux
-- [ ] **`novaai/updater.py`** — Guard Windows-specific git paths (`C:\Program Files\Git\...`)
-- [ ] **`novaai/launcher.py`** — Make setup call platform-aware (currently hardcodes Windows paths)
+- [x] **`setup.py`** — Cross-platform venv paths, subprocess flags, Ollama detection
+- [x] **`novaai/tts.py`** — Linux audio playback via ffplay, ALSA/PulseAudio/PipeWire/JACK host API support
+- [x] **`novaai/updater.py`** — Git detection works on both platforms
+- [x] **`novaai/launcher.py`** — Platform-aware setup call
+- [x] **`install.sh`** — Full Linux installer (Python, LLM provider, Ollama, CUDA, desktop launcher)
+- [x] README updated with Linux install instructions
 
-### 📜 New Files
+### 🗺️ Roadmap
 
-- [ ] **`install.sh`** — Linux equivalent of `install.ps1` (Python check, LLM provider choice, Ollama install, venv setup, CUDA selection, desktop launcher)
-
-### 🏷️ Metadata
-
-- [ ] Update README badge from `platform-Windows` to `platform-Windows | Linux`
-- [ ] Update docs with Linux install instructions
-
-### ✅ Already Cross-Platform (no changes needed)
-
-| Component | Why It Works |
-|-----------|-------------|
-| pywebview GUI | Auto-uses GTK on Linux, EdgeChromium on Windows |
-| ffplay media player | `shutil.which("ffplay")` works everywhere |
-| Performance detection | Has `os.sysconf()` fallback for Linux RAM |
-| Window icon | Guarded with `sys.platform != "win32"` |
-| WAV playback | Uses cross-platform `sounddevice` library |
-| All features (reminders, todos, etc.) | Pure Python, no OS dependencies |
-| SQLite database | Cross-platform by nature |
+- [ ] Test on more distros (Fedora, Arch, NixOS)
+- [ ] Wayland-specific pywebview testing
+- [ ] macOS support
 
 ---
 

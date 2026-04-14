@@ -1,26 +1,33 @@
 # 🔧 Setup Guide
 
-Everything you need to get NovaAI running on Windows.
+Everything you need to get NovaAI running on Windows or Linux.
 
 ---
 
 ## ⚡ One-Line Install (fresh machine)
 
-Open PowerShell and paste:
+**Windows** — open PowerShell and paste:
 
 ```powershell
 powershell -c "irm https://raw.githubusercontent.com/cachenetworks/NovaAI/main/install.ps1 | iex"
 ```
 
-This interactive installer handles everything — Python, Ollama, NVIDIA GPU, desktop shortcut. Just answer a few questions.
+**Linux** — open a terminal and paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cachenetworks/NovaAI/main/install.sh | bash
+```
+
+Both installers handle everything — Python, LLM provider, Ollama, NVIDIA GPU, desktop shortcut/launcher. Just answer a few questions.
 
 ### Prerequisites (handled automatically by the installer)
 
-- **Windows 10 or 11** (64-bit)
-- **Python 3.11+** — installed via winget if missing
+- **Windows 10/11** (64-bit) or **Linux** (Ubuntu, Debian, Fedora, Arch, etc.)
+- **Python 3.11+** — installed via winget (Windows) or your package manager (Linux)
 - **Internet connection** for initial setup
 - **~4 GB disk space** for models and dependencies
 - **(Optional)** NVIDIA GPU with CUDA for faster voice
+- **(Linux)** `ffmpeg` for audio playback: `sudo apt install ffmpeg`
 
 ---
 

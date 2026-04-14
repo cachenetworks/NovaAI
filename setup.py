@@ -1,7 +1,5 @@
 """
-NovaAI Setup — one-script installer for Windows.
-
-Replaces setup.bat, launch_gui.bat, and update.bat with a single entry point:
+NovaAI Setup — cross-platform installer (Windows + Linux).
 
     python setup.py              # full setup + launch GUI
     python setup.py --setup      # setup only, don't launch
@@ -19,9 +17,11 @@ import time
 import argparse
 from pathlib import Path
 
+IS_WINDOWS = sys.platform == "win32"
+
 ROOT_DIR = Path(__file__).resolve().parent
 VENV_DIR = ROOT_DIR / ".venv"
-VENV_PYTHON = VENV_DIR / "Scripts" / "python.exe"
+VENV_PYTHON = VENV_DIR / ("Scripts" / "python.exe" if IS_WINDOWS else "bin" / "python")
 SETUP_MARKER = ROOT_DIR / ".setup-complete"
 ENV_FILE = ROOT_DIR / ".env"
 ENV_EXAMPLE = ROOT_DIR / ".env.example"
@@ -50,7 +50,7 @@ def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 
 def has_winget() -> bool:
-    return shutil.which("winget") is not None
+    return IS_WINDOWS and shutil.which("winget") is not None
 
 
 def read_ollama_model() -> str:
@@ -105,26 +105,36 @@ def ensure_project_files() -> None:
 
 def find_ollama() -> str | None:
     """Return the path to the ollama executable, or None."""
-    # Common Windows install location
-    local_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-    if local_path.exists():
-        return str(local_path)
     found = shutil.which("ollama")
-    return found
+    if found:
+        return found
+    if IS_WINDOWS:
+        local_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+        if local_path.exists():
+            return str(local_path)
+    return None
 
 
 def install_ollama() -> None:
-    if not has_winget():
-        print("    winget is not available. Please install Ollama manually:")
-        print("    https://ollama.com/download")
-        raise RuntimeError("Cannot auto-install Ollama without winget.")
-    print("    Installing Ollama via winget...")
-    run([
-        "winget", "install", "-e", "--id", "Ollama.Ollama",
-        "--source", "winget",
-        "--accept-package-agreements", "--accept-source-agreements",
-        "--disable-interactivity", "--silent",
-    ])
+    if IS_WINDOWS:
+        if not has_winget():
+            print("    winget is not available. Please install Ollama manually:")
+            print("    https://ollama.com/download")
+            raise RuntimeError("Cannot auto-install Ollama without winget.")
+        print("    Installing Ollama via winget...")
+        run([
+            "winget", "install", "-e", "--id", "Ollama.Ollama",
+            "--source", "winget",
+            "--accept-package-agreements", "--accept-source-agreements",
+            "--disable-interactivity", "--silent",
+        ])
+    else:
+        if not shutil.which("curl"):
+            print("    curl is not available. Please install Ollama manually:")
+            print("    https://ollama.com/download")
+            raise RuntimeError("Cannot auto-install Ollama without curl.")
+        print("    Installing Ollama via install script...")
+        run(["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"])
 
 
 def ollama_is_running() -> bool:
@@ -143,14 +153,22 @@ def start_ollama(ollama_exe: str) -> None:
     if ollama_is_running():
         return
 
-    # Try the GUI app first, fall back to serve
-    app_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama app.exe"
-    if app_path.exists():
-        subprocess.Popen([str(app_path)], creationflags=subprocess.DETACHED_PROCESS)
+    if IS_WINDOWS:
+        # Try the GUI app first, fall back to serve
+        app_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama app.exe"
+        if app_path.exists():
+            subprocess.Popen([str(app_path)], creationflags=subprocess.DETACHED_PROCESS)
+        else:
+            subprocess.Popen(
+                [ollama_exe, "serve"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
     else:
         subprocess.Popen(
             [ollama_exe, "serve"],
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
 
     print("    Waiting for Ollama to come online...", end="", flush=True)
