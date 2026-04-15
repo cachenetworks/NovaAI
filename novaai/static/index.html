@@ -219,6 +219,7 @@ tailwind.config = {
             <!-- Quick actions -->
             <div class="flex items-center gap-1.5 px-3 py-2 flex-shrink-0">
               <button id="d-btn-listen" onclick="doListen()" class="btn-secondary text-[11px] px-2.5 py-1.5 rounded-md font-medium" disabled>Listen</button>
+              <button id="d-btn-stop" onclick="doStop()" class="hidden bg-red-600 hover:bg-red-500 text-white text-[11px] px-2.5 py-1.5 rounded-md font-medium">Stop</button>
               <button onclick="doRecalibrate()" class="btn-secondary text-[11px] px-2.5 py-1.5 rounded-md font-medium">Calibrate</button>
               <button onclick="doPerformance()" class="btn-secondary text-[11px] px-2.5 py-1.5 rounded-md font-medium">Perf</button>
             </div>
@@ -243,6 +244,7 @@ tailwind.config = {
         <div class="flex gap-2 p-4 border-t border-nova-border bg-nova-surface">
           <input id="chat-input" type="text" placeholder="Type a message..." class="flex-1" onkeydown="if(event.key==='Enter')doSend()" />
           <button id="chat-send-btn" onclick="doSend()" class="btn-primary px-5 py-2 rounded-lg text-[13px] font-semibold">Send</button>
+          <button id="chat-stop-btn" onclick="doStop()" class="hidden bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-[13px] font-semibold" title="Stop generation (Esc)">Stop</button>
           <button id="chat-listen-btn" onclick="doListenFromChat()" class="btn-secondary px-4 py-2 rounded-lg text-[13px] font-semibold" title="Voice input (F8)">Mic</button>
         </div>
       </div>
@@ -611,8 +613,13 @@ function syncDashboard() {
   setToggleMic(s.mic_muted);
   setToggleUI('web',   s.web_search,    'ON', 'OFF');
 
-  // Listen buttons
+  // Listen + Stop buttons
   $('d-btn-listen').disabled = !s.session_started || s.busy || s.mic_muted;
+  const dStop = $('d-btn-stop');
+  if (dStop) {
+    if (s.busy) { dStop.classList.remove('hidden'); }
+    else        { dStop.classList.add('hidden'); }
+  }
 
   // Status bar
   $('sb-session').textContent = 'Session: ' + (s.session_started ? 'On' : 'Off');
@@ -622,10 +629,15 @@ function syncDashboard() {
   // Chat page controls
   const chatInput = $('chat-input');
   const chatSend  = $('chat-send-btn');
+  const chatStop  = $('chat-stop-btn');
   const chatListen = $('chat-listen-btn');
   if (chatInput) chatInput.disabled = !s.session_started || s.busy;
   if (chatSend)  chatSend.disabled  = !s.session_started || s.busy;
   if (chatListen) chatListen.disabled = !s.session_started || s.busy || s.mic_muted;
+  if (chatStop) {
+    if (s.busy) { chatStop.classList.remove('hidden'); }
+    else        { chatStop.classList.add('hidden'); }
+  }
 
 }
 
@@ -741,6 +753,10 @@ async function doSend() {
   try {
     await api().send_message(text);
   } catch(e) { console.error(e); }
+}
+
+async function doStop() {
+  try { await api().stop_generation(); } catch(e) { console.error(e); }
 }
 
 
@@ -1074,9 +1090,10 @@ async function init() {
   appendChat('System', (STATE.companion_name || 'NovaAI') + ' is online. Press Start Session to begin.', 'system');
   appendChat('System', 'Voice replies are off by default. Toggle them from Dashboard or Settings.', 'system');
 
-  // Keyboard shortcut: F8 = listen
+  // Keyboard shortcuts: F8 = listen, Escape = stop
   document.addEventListener('keydown', e => {
     if (e.key === 'F8') { e.preventDefault(); doListen(); }
+    if (e.key === 'Escape' && STATE.busy) { e.preventDefault(); doStop(); }
   });
 
   // App is now fully initialized — unlock UI and dismiss loading screen

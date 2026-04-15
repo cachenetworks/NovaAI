@@ -100,6 +100,7 @@ class Api:
         self.mic_muted = False
         self.busy = False
         self._lock = threading.Lock()
+        self._stop_event = threading.Event()
         self._initialized = False
 
     def initialize(self) -> dict[str, Any]:
@@ -250,6 +251,18 @@ class Api:
         finally:
             self._release()
 
+    def stop_generation(self) -> dict[str, Any]:
+        """Interrupt the current pipeline (LLM / TTS / playback)."""
+        if not self.busy:
+            return {"ok": False, "msg": "Nothing to stop."}
+        self._stop_event.set()
+        try:
+            import sounddevice as sd
+            sd.stop()
+        except Exception:
+            pass
+        return {"ok": True}
+
     def start_listen(self) -> dict[str, Any]:
         if (err := self._not_ready()): return err
         if not self.session_started:
@@ -304,7 +317,11 @@ class Api:
 
     # ── pipeline (runs in api thread) ─────────────────────────────────────────
 
+    def _stopped(self) -> bool:
+        return self._stop_event.is_set()
+
     def _pipeline(self, user_text: str, from_voice: bool) -> str:
+        self._stop_event.clear()
         user_name = self.profile.get("user_name", "You")
         companion = self.profile.get("companion_name", "NovaAI")
 
@@ -321,6 +338,10 @@ class Api:
             self._push_status("Media request handled.")
             return "Media request handled."
 
+        if self._stopped():
+            self._push_status("Stopped.")
+            return "Stopped."
+
         # Features
         feature_result = handle_feature_request(user_text, self.profile)
         if feature_result.handled:
@@ -330,13 +351,17 @@ class Api:
             append_history("assistant", feature_result.response)
             self._push_chat(companion, feature_result.response, "assistant")
             self._js("window.__onFeaturesChanged()")
-            if self.state.voice_enabled:
+            if self.state.voice_enabled and not self._stopped():
                 try:
                     speak_text(feature_result.response, self.config, self.state)
                 except Exception:
                     pass
             self._push_status("Ready.")
             return "Feature request handled."
+
+        if self._stopped():
+            self._push_status("Stopped.")
+            return "Stopped."
 
         # Web context
         web_context: str | None = None
@@ -354,7 +379,7 @@ class Api:
                         self._push_chat("System", f"Searching: {web_query}", "system")
                 if not web_query and self.config.web_auto_search and should_auto_search(user_text):
                     web_query = user_text
-                if web_query:
+                if web_query and not self._stopped():
                     try:
                         bundle = fetch_web_context(web_query, self.config)
                         web_context = bundle.context
@@ -364,20 +389,33 @@ class Api:
                     finally:
                         self.state.pending_web_query = None
 
+        if self._stopped():
+            self._push_status("Stopped.")
+            return "Stopped."
+
         self._push_status("Generating reply...")
         reply = request_reply(user_text, self.profile, self.config, web_context=web_context)
+
+        if self._stopped():
+            self._push_status("Stopped.")
+            return "Stopped."
+
         append_history("user", user_text)
         append_history("assistant", reply)
         self._push_chat(companion, reply, "assistant")
 
-        if self.state.voice_enabled:
+        if self.state.voice_enabled and not self._stopped():
             self._push_status("Speaking...")
             try:
                 audio_path = speak_text(reply, self.config, self.state)
-                if should_play_audio_after_synthesis(self.config):
+                if should_play_audio_after_synthesis(self.config) and not self._stopped():
                     play_audio_file(audio_path, self.config.speaker_device_index)
             except Exception:
                 pass
+
+        if self._stopped():
+            self._push_status("Stopped.")
+            return "Stopped."
 
         if from_voice and self.hands_free_enabled and not self.mic_muted:
             self._push_status("Listening...")
