@@ -127,6 +127,9 @@ function createBot() {
 
   bot = mineflayer.createBot(opts);
   bot.loadPlugin(pathfinder);
+  try {
+    bot.loadPlugin(require('mineflayer-tool').plugin);  // auto best-tool for mining
+  } catch (e) { /* optional dep */ }
 
   bot.once('spawn', () => {
     connected = true;
@@ -187,6 +190,31 @@ function nearestHostile(maxDist) {
     if (d < bestD) { bestD = d; best = e; }
   }
   return best;
+}
+
+function armorSlotForItem(name) {
+  name = String(name).toLowerCase();
+  if (name.includes('helmet') || name.includes('cap') || name.includes('turtle')) return 'head';
+  if (name.includes('chestplate') || name.includes('elytra')) return 'torso';
+  if (name.includes('leggings')) return 'legs';
+  if (name.includes('boots')) return 'feet';
+  return null;
+}
+
+function armorTier(name) {
+  name = String(name).toLowerCase();
+  const order = ['leather', 'gold', 'golden', 'chainmail', 'iron', 'diamond', 'netherite'];
+  for (let i = order.length - 1; i >= 0; i--) if (name.includes(order[i])) return i;
+  return -1;
+}
+
+const FOODS = ['cooked', 'steak', 'bread', 'apple', 'carrot', 'baked_potato',
+  'melon_slice', 'cookie', 'pumpkin_pie', 'beetroot_soup', 'mushroom_stew',
+  'rabbit_stew', 'golden_apple', 'sweet_berries', 'glow_berries', 'honey_bottle',
+  'dried_kelp', 'chicken', 'porkchop', 'beef', 'mutton', 'cod', 'salmon', 'potato'];
+function isFood(name) {
+  name = String(name).toLowerCase();
+  return FOODS.some((f) => name.includes(f));
 }
 
 function resolveItem(name) {
@@ -315,8 +343,18 @@ async function comeTo(playerName) {
   return { ok: true, message: `reached ${playerName || OWNER}` };
 }
 
+async function equipBestWeapon() {
+  const weapon = bot.inventory.items()
+    .filter((i) => i.name.includes('sword') || i.name.includes('_axe'))
+    .sort((a, b) => armorTier(b.name) - armorTier(a.name))[0];
+  if (weapon) {
+    try { await bot.equip(weapon, 'hand'); } catch (e) { /* ignore */ }
+  }
+}
+
 async function defend(seconds) {
   seconds = Math.max(1, Math.min(8, Number(seconds) || 4));
+  await equipBestWeapon();
   const end = Date.now() + seconds * 1000;
   let hits = 0;
   while (Date.now() < end) {
@@ -398,6 +436,7 @@ async function act(verb, args) {
       case 'attack': {
         const target = nearestHostile(args.range || 12);
         if (!target) return { ok: false, message: 'no hostiles in range' };
+        await equipBestWeapon();
         await bot.lookAt(target.position.offset(0, 1.4, 0), true);
         bot.attack(target);
         return { ok: true, message: `attacked ${target.name}` };
@@ -415,11 +454,57 @@ async function act(verb, args) {
           if (key.includes(name)) ids.push(bot.registry.blocksByName[key].id);
         }
         if (!ids.length) return { ok: false, message: `unknown block ${name}` };
-        const block = bot.findBlock({ matching: ids, maxDistance: 48 });
-        if (!block) return { ok: false, message: `no ${name} nearby` };
-        await bot.pathfinder.goto(new goals.GoalNear(block.position.x, block.position.y, block.position.z, 1));
-        await bot.dig(bot.blockAt(block.position) || block);
-        return { ok: true, message: `mined ${name}` };
+        const found = bot.findBlock({ matching: ids, maxDistance: 64 });
+        if (!found) return { ok: false, message: `no ${name} nearby` };
+        await bot.pathfinder.goto(new goals.GoalNear(found.position.x, found.position.y, found.position.z, 1));
+        const block = bot.blockAt(found.position) || found;
+        // Equip the best available tool — required for ores, much faster for stone/wood.
+        try { if (bot.tool) await bot.tool.equipForBlock(block, {}); } catch (e) { /* ignore */ }
+        if (typeof bot.canDigBlock === 'function' && !bot.canDigBlock(block)) {
+          return { ok: false, message: `can't mine ${block.name} yet — need a better/correct tool` };
+        }
+        try { await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true); } catch (e) { /* ignore */ }
+        await bot.dig(block);
+        return { ok: true, message: `mined ${block.name}` };
+      }
+
+      case 'equip': {
+        const name = String(args.name || args.item || '').toLowerCase();
+        if (!name) return { ok: false, message: 'need an item name' };
+        const item = bot.inventory.items().find((i) => i.name.includes(name));
+        if (!item) return { ok: false, message: `no ${name} in inventory` };
+        const dest = String(args.where || armorSlotForItem(item.name) || 'hand');
+        await bot.equip(item, dest);
+        return { ok: true, message: `equipped ${item.name} (${dest})` };
+      }
+
+      case 'equip_armor': {
+        const slots = {
+          head: ['helmet', 'cap', 'turtle'],
+          torso: ['chestplate'],
+          legs: ['leggings'],
+          feet: ['boots'],
+        };
+        const equipped = [];
+        for (const [slot, kws] of Object.entries(slots)) {
+          const cands = bot.inventory.items().filter((i) => kws.some((k) => i.name.includes(k)));
+          if (!cands.length) continue;
+          cands.sort((a, b) => armorTier(b.name) - armorTier(a.name));
+          try { await bot.equip(cands[0], slot); equipped.push(cands[0].name); } catch (e) { /* skip */ }
+        }
+        return { ok: true, message: equipped.length ? `equipped ${equipped.join(', ')}` : 'no armor in inventory' };
+      }
+
+      case 'eat': {
+        const food = bot.inventory.items().find((i) => isFood(i.name));
+        if (!food) return { ok: false, message: 'no food in inventory' };
+        try {
+          await bot.equip(food, 'hand');
+          await bot.consume();
+          return { ok: true, message: `ate ${food.name}` };
+        } catch (e) {
+          return { ok: false, message: `couldn't eat (full?): ${(e && e.message) || e}` };
+        }
       }
 
       case 'craft': {

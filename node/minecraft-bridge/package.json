@@ -14,6 +14,7 @@
   "dependencies": {
     "mineflayer": "^4.20.0",
     "mineflayer-pathfinder": "^2.4.5",
+    "mineflayer-tool": "^1.2.0",
     "prismarine-viewer": "^1.28.0"
   }
 }

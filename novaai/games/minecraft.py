@@ -25,7 +25,7 @@ BRIDGE_DIR = ROOT_DIR / "node" / "minecraft-bridge"
 _VERBS = [
     "follow", "come", "bring", "find_in_chests", "withdraw", "drop",
     "attack", "defend", "goto", "mine", "collect", "craft", "place",
-    "say", "look", "wait", "stop",
+    "equip", "equip_armor", "eat", "say", "look", "wait", "stop",
 ]
 
 
