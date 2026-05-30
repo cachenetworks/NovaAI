@@ -23,9 +23,10 @@ from .base import GameCommand, GameObservation
 BRIDGE_DIR = ROOT_DIR / "node" / "minecraft-bridge"
 
 _VERBS = [
-    "follow", "come", "bring", "find_in_chests", "withdraw", "drop",
-    "attack", "defend", "goto", "mine", "collect", "craft", "place",
-    "equip", "equip_armor", "eat", "say", "look", "wait", "stop",
+    "follow", "come", "bring", "find_in_chests", "withdraw", "store", "drop",
+    "find_ores", "mine", "collect", "craft", "place", "place_at",
+    "attack", "punch", "defend", "equip", "equip_armor", "eat",
+    "goto", "look", "sleep", "wake", "say", "wait", "stop",
 ]
 
 
@@ -155,6 +156,22 @@ class MinecraftDriver:
 
     def available_verbs(self) -> list[str]:
         return list(_VERBS)
+
+    def verbs_help(self) -> str:
+        return (
+            "How to use verbs (args go in 'args'):\n"
+            "- find_ores {name?, exposed?}: returns visible ore coords. PREFER this, "
+            "then mine {x,y,z} the result — legit, no x-ray (only ores you can see).\n"
+            "- mine/collect {name} OR {x,y,z}; place {name} (under you); "
+            "place_at {name,x,y,z} (build on a surface).\n"
+            "- attack {target:'<player/mob>'} or {} for nearest hostile; "
+            "punch {target:'<player>'} = one fist hit (use for 'smack <name>'); "
+            "defend {seconds}.\n"
+            "- equip {name,where?}; equip_armor {}; eat {}.\n"
+            "- follow/come {player?} (defaults to owner); bring {name,count?}; "
+            "find_in_chests {name}; withdraw {name,count?}; store {name,count?}; drop {name,count?}.\n"
+            "- goto {x,z,y?}; sleep {}; wake {}; say {text}; wait {}; stop {}."
+        )
 
     def viewer_url(self) -> str:
         return f"http://127.0.0.1:{self.config.mc_viewer_port}"

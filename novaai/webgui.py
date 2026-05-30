@@ -938,12 +938,17 @@ class Api:
             return {"ok": False, "msg": str(exc)}
 
     def stop_game(self) -> dict[str, Any]:
-        if self.game_agent:
+        agent = self.game_agent
+        # Drop the reference first so status flips to stopped immediately; the
+        # daemon thread unwinds on its own (stop() also aborts the bridge).
+        self.game_agent = None
+        if agent:
             try:
-                self.game_agent.stop()
+                agent.stop()
             except Exception:
                 pass
-        return {"ok": True, "msg": "Game agent stopping."}
+        self._avatar_dance(False)
+        return {"ok": True, "msg": "Game agent stopped."}
 
     def set_game_goal(self, goal: str) -> dict[str, Any]:
         if not self.game_agent:

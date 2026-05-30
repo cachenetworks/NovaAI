@@ -68,6 +68,13 @@ class GameAgent:
 
     def stop(self) -> None:
         self._stop.set()
+        # Abort any in-flight action immediately (e.g. a long pathfinder move):
+        # stopping the driver makes the current observe/act call fail fast so the
+        # loop unwinds instead of blocking until the action finishes.
+        try:
+            self.driver.stop()
+        except Exception:
+            pass
 
     def is_running(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
@@ -99,19 +106,30 @@ class GameAgent:
         self.narrate("Okay, I'm done playing for now.", "neutral")
 
     def _tick(self) -> None:
+        if self._stop.is_set():
+            return
         obs = self.driver.observe()
         try:
             self.on_update(obs.raw)
         except Exception:
             pass
+        if self._stop.is_set():
+            return
 
         verbs = self.driver.available_verbs()
+        verbs_help = ""
+        if hasattr(self.driver, "verbs_help"):
+            try:
+                verbs_help = self.driver.verbs_help()
+            except Exception:
+                verbs_help = ""
         framing = (
             f"You are autonomously playing {self.driver.name}. Think out loud briefly in "
             "first person, then choose ONE action. Respond ONLY with JSON of the form "
             '{"thought": "<one or two in-character sentences>", "verb": "<one verb>", '
             '"args": {<key: value>}}. '
             f"Allowed verbs: {', '.join(verbs)}."
+            + (f"\n{verbs_help}" if verbs_help else "")
         )
         user_prompt = (
             f"Goal: {self.goal}\n\nCurrent world state:\n{obs.text}\n\n"
@@ -129,6 +147,9 @@ class GameAgent:
                 history=list(self._log),
             )
         )
+
+        if self._stop.is_set():
+            return
 
         command = _extract_command(result.reply)
         if not command:

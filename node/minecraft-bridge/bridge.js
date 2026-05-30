@@ -19,6 +19,7 @@ const http = require('http');
 const path = require('path');
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
+const Vec3 = require('vec3');
 
 // ── arg / env parsing ────────────────────────────────────────────────────────
 function getArg(name, envName, fallback) {
@@ -227,6 +228,44 @@ function resolveItem(name) {
   return null;
 }
 
+function entityByName(name) {
+  const want = String(name || '').toLowerCase();
+  if (!want) return null;
+  const p = playerEntity(want);
+  if (p) return p;
+  let best = null;
+  let bestD = 64;
+  for (const id in bot.entities) {
+    const e = bot.entities[id];
+    if (!e || e === bot.entity || !e.position) continue;
+    const nm = String(e.username || e.name || '').toLowerCase();
+    if (nm && (nm === want || nm.includes(want))) {
+      const d = e.position.distanceTo(bot.entity.position);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+  }
+  return best;
+}
+
+// "Legit" exposure check: a block is exposed if at least one of its 6 faces
+// touches air/water (i.e. you could actually see it while caving — not X-ray).
+function isExposed(block) {
+  if (!block || !block.position) return false;
+  const offsets = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  for (const [dx, dy, dz] of offsets) {
+    const n = bot.blockAt(block.position.offset(dx, dy, dz));
+    if (!n || n.name === 'air' || n.name === 'cave_air' || n.name === 'void_air'
+        || n.name === 'water' || n.boundingBox === 'empty') {
+      return true;
+    }
+  }
+  return false;
+}
+
+const ORE_KEYWORDS = ['coal_ore', 'copper_ore', 'iron_ore', 'gold_ore', 'redstone_ore',
+  'lapis_ore', 'diamond_ore', 'emerald_ore', 'nether_gold_ore', 'nether_quartz_ore',
+  'ancient_debris'];
+
 function chestBlockIds() {
   const ids = [];
   for (const n of ['chest', 'trapped_chest', 'barrel', 'ender_chest']) {
@@ -434,12 +473,123 @@ async function act(verb, args) {
       }
 
       case 'attack': {
-        const target = nearestHostile(args.range || 12);
-        if (!target) return { ok: false, message: 'no hostiles in range' };
+        // Attack a named player/mob if given, else the nearest hostile.
+        const target = (args.target || args.name)
+          ? entityByName(args.target || args.name)
+          : nearestHostile(args.range || 12);
+        if (!target) {
+          return { ok: false, message: (args.target || args.name)
+            ? `can't see ${args.target || args.name}` : 'no hostiles in range' };
+        }
         await equipBestWeapon();
         await bot.lookAt(target.position.offset(0, 1.4, 0), true);
         bot.attack(target);
-        return { ok: true, message: `attacked ${target.name}` };
+        return { ok: true, message: `attacked ${target.username || target.name}` };
+      }
+
+      case 'punch': {
+        // One bare-fist hit on a named player/mob ("smack USERNAME").
+        const target = entityByName(args.target || args.name || args.player);
+        if (!target) return { ok: false, message: `can't see ${args.target || args.name || 'them'}` };
+        try { await bot.unequip('hand'); } catch (e) { /* already empty */ }
+        await bot.lookAt(target.position.offset(0, 1.4, 0), true);
+        bot.attack(target);
+        return { ok: true, message: `punched ${target.username || target.name}` };
+      }
+
+      case 'find_ores': {
+        const name = String(args.name || '').toLowerCase();
+        const exposedOnly = args.exposed !== false;   // legit by default
+        const ids = [];
+        for (const key in bot.registry.blocksByName) {
+          const isOre = name
+            ? (key.includes(name) && key.includes('ore'))
+            : ORE_KEYWORDS.some((o) => key.includes(o));
+          if (isOre) ids.push(bot.registry.blocksByName[key].id);
+        }
+        if (!ids.length) return { ok: false, message: 'no such ore type' };
+        const positions = bot.findBlocks({ matching: ids, maxDistance: 32, count: 64 });
+        const list = [];
+        for (const pos of positions) {
+          const b = bot.blockAt(pos);
+          if (!b) continue;
+          if (exposedOnly && !isExposed(b)) continue;
+          list.push({ name: b.name, x: pos.x, y: pos.y, z: pos.z,
+            dist: Math.round(pos.distanceTo(bot.entity.position)) });
+          if (list.length >= 8) break;
+        }
+        list.sort((a, b) => a.dist - b.dist);
+        return {
+          ok: true,
+          ores: list,
+          message: list.length
+            ? 'found ' + list.map((o) => `${o.name} @${o.x},${o.y},${o.z} (${o.dist}m)`).join('; ')
+            : (exposedOnly ? 'no exposed ores nearby — dig around a cave to expose some' : 'no ores nearby'),
+        };
+      }
+
+      case 'store':
+      case 'deposit': {
+        const name = String(args.name || args.item || '');
+        if (!name) return { ok: false, message: 'need an item name' };
+        const ids = chestBlockIds();
+        const positions = bot.findBlocks({ matching: ids, maxDistance: 32, count: 8 });
+        if (!positions.length) return { ok: false, message: 'no chest nearby' };
+        const want = args.count !== undefined ? Number(args.count) : 1e9;
+        let stored = 0;
+        for (const p of positions) {
+          if (stored >= want) break;
+          try {
+            await bot.pathfinder.goto(new goals.GoalNear(p.x, p.y, p.z, 1));
+            const container = await bot.openContainer(bot.blockAt(p));
+            const items = bot.inventory.items().filter((i) => i.name.includes(name.toLowerCase()));
+            for (const it of items) {
+              if (stored >= want) break;
+              const take = Math.min(it.count, want - stored);
+              try { await container.deposit(it.type, null, take); stored += take; } catch (e) { /* chest full */ }
+            }
+            container.close();
+          } catch (e) { /* try next chest */ }
+        }
+        return { ok: stored > 0, message: stored ? `stored ${stored} ${name}` : `couldn't store ${name} (chest full or none held)` };
+      }
+
+      case 'place_at': {
+        const name = String(args.name || args.block || '').toLowerCase();
+        if (!name || args.x === undefined || args.z === undefined) {
+          return { ok: false, message: 'place_at needs name + x,y,z' };
+        }
+        const invItem = bot.inventory.items().find((i) => i.name.includes(name));
+        if (!invItem) return { ok: false, message: `no ${name} in inventory` };
+        const y = args.y !== undefined ? args.y : Math.floor(bot.entity.position.y);
+        const target = new Vec3(Math.floor(args.x), Math.floor(y), Math.floor(args.z));
+        await bot.pathfinder.goto(new goals.GoalNear(target.x, target.y, target.z, 2));
+        // Find a solid neighbour to place against.
+        const faces = [[0,-1,0],[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];
+        let ref = null; let face = null;
+        for (const [dx,dy,dz] of faces) {
+          const nb = bot.blockAt(target.offset(dx, dy, dz));
+          if (nb && nb.name !== 'air' && nb.boundingBox === 'block') { ref = nb; face = new Vec3(-dx, -dy, -dz); break; }
+        }
+        if (!ref) return { ok: false, message: 'no solid surface to place against there' };
+        try {
+          await bot.equip(invItem, 'hand');
+          await bot.placeBlock(ref, face);
+          return { ok: true, message: `placed ${name} at ${target.x},${target.y},${target.z}` };
+        } catch (e) { return { ok: false, message: `place failed: ${(e && e.message) || e}` }; }
+      }
+
+      case 'sleep': {
+        const bed = bot.findBlock({ matching: (b) => b && b.name && b.name.includes('bed'), maxDistance: 16 });
+        if (!bed) return { ok: false, message: 'no bed nearby' };
+        await bot.pathfinder.goto(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2));
+        try { await bot.sleep(bot.blockAt(bed.position)); return { ok: true, message: 'sleeping' }; }
+        catch (e) { return { ok: false, message: `can't sleep: ${(e && e.message) || e}` }; }
+      }
+
+      case 'wake': {
+        try { await bot.wake(); return { ok: true, message: 'woke up' }; }
+        catch (e) { return { ok: false, message: 'not sleeping' }; }
       }
 
       case 'defend':
@@ -447,17 +597,27 @@ async function act(verb, args) {
 
       case 'mine':
       case 'collect': {
-        const name = String(args.name || args.block || '').toLowerCase();
-        if (!name) return { ok: false, message: 'need a block name' };
-        const ids = [];
-        for (const key in bot.registry.blocksByName) {
-          if (key.includes(name)) ids.push(bot.registry.blocksByName[key].id);
+        let block;
+        if (args.x !== undefined && args.z !== undefined) {
+          // Mine a specific coordinate (e.g. an ore located via find_ores).
+          const y = args.y !== undefined ? args.y : Math.floor(bot.entity.position.y);
+          const pos = new Vec3(Math.floor(args.x), Math.floor(y), Math.floor(args.z));
+          await bot.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 1));
+          block = bot.blockAt(pos);
+          if (!block || block.name === 'air') return { ok: false, message: 'nothing to mine there' };
+        } else {
+          const name = String(args.name || args.block || '').toLowerCase();
+          if (!name) return { ok: false, message: 'need a block name or coordinates' };
+          const ids = [];
+          for (const key in bot.registry.blocksByName) {
+            if (key.includes(name)) ids.push(bot.registry.blocksByName[key].id);
+          }
+          if (!ids.length) return { ok: false, message: `unknown block ${name}` };
+          const found = bot.findBlock({ matching: ids, maxDistance: 64 });
+          if (!found) return { ok: false, message: `no ${name} nearby` };
+          await bot.pathfinder.goto(new goals.GoalNear(found.position.x, found.position.y, found.position.z, 1));
+          block = bot.blockAt(found.position) || found;
         }
-        if (!ids.length) return { ok: false, message: `unknown block ${name}` };
-        const found = bot.findBlock({ matching: ids, maxDistance: 64 });
-        if (!found) return { ok: false, message: `no ${name} nearby` };
-        await bot.pathfinder.goto(new goals.GoalNear(found.position.x, found.position.y, found.position.z, 1));
-        const block = bot.blockAt(found.position) || found;
         // Equip the best available tool — required for ores, much faster for stone/wood.
         try { if (bot.tool) await bot.tool.equipForBlock(block, {}); } catch (e) { /* ignore */ }
         if (typeof bot.canDigBlock === 'function' && !bot.canDigBlock(block)) {
