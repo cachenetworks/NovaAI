@@ -351,6 +351,8 @@ const ANIMAL_FOOD = {
   panda: 'bamboo', turtle: 'seagrass', bee: 'flower', frog: 'slime_ball',
 };
 
+const FOOD_ANIMALS = ['cow', 'pig', 'chicken', 'sheep', 'rabbit', 'cod', 'salmon'];
+
 // Tool tiers best -> worst (lower index = better).
 const TOOL_TIERS = ['netherite', 'diamond', 'iron', 'golden', 'stone', 'wooden'];
 function toolTier(name) {
@@ -501,6 +503,94 @@ async function ensureCraftingTable() {
     }
   }
   return bot.findBlock({ matching: idsForNames(['crafting_table']), maxDistance: 4 });
+}
+
+async function smeltInput(inputName, fuelName, count) {
+  const fb = bot.findBlock({ matching: idsForNames(['furnace', 'blast_furnace', 'smoker']), maxDistance: 16 });
+  if (!fb) return { ok: false, message: 'no furnace nearby (craft & place one first)' };
+  await bot.pathfinder.goto(new goals.GoalNear(fb.position.x, fb.position.y, fb.position.z, 2));
+  const input = findInventory(inputName);
+  if (!input) return { ok: false, message: `no ${inputName} to smelt/cook` };
+  const furnace = await bot.openFurnace(bot.blockAt(fb.position));
+  try {
+    try { if (furnace.outputItem()) await furnace.takeOutput(); } catch (e) { /* ignore */ }
+    const c = count !== undefined ? Math.min(Number(count), input.count) : input.count;
+    await furnace.putInput(input.type, null, c);
+    const fuel = fuelName ? findInventory(fuelName) : findInventory('coal', 'charcoal', 'coal_block');
+    let fueled = false;
+    if (fuel) {
+      await furnace.putFuel(fuel.type, null, Math.min(Math.max(1, Math.ceil(c / 8)), fuel.count));
+      fueled = true;
+    }
+    furnace.close();
+    return { ok: true, message: `${input.name} x${c} in the furnace` + (fueled ? '' : ' — NO FUEL, add coal!') + ' (collect with take_smelted)' };
+  } catch (e) {
+    try { furnace.close(); } catch (_) { /* ignore */ }
+    return { ok: false, message: `smelt failed: ${(e && e.message) || e}` };
+  }
+}
+
+// Place one block at (x,y,z) against any solid neighbour. itemKey = item name.
+async function placeBlockAt(x, y, z, itemKey) {
+  const target = new Vec3(x, y, z);
+  const at = bot.blockAt(target);
+  if (at && at.name !== 'air' && at.boundingBox === 'block') return true;
+  if (!findInventory(itemKey)) return false;
+  const refs = [[0, -1, 0], [0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0]];
+  for (const [dx, dy, dz] of refs) {
+    const ref = bot.blockAt(target.offset(dx, dy, dz));
+    if (ref && ref.name !== 'air' && ref.boundingBox === 'block') {
+      try {
+        await bot.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+        const item = findInventory(itemKey);
+        if (!item) return false;
+        await bot.equip(item, 'hand');
+        await bot.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+        return true;
+      } catch (e) { /* try next reference */ }
+    }
+  }
+  return false;
+}
+
+// Build a simple hollow house (walls + flat roof + a doorway) from a block in
+// inventory, starting at the bot's position. Best-effort, time-budgeted.
+async function buildHouse(args) {
+  const w = Math.max(3, Math.min(11, Number(args.width) || 5));
+  const d = Math.max(3, Math.min(11, Number(args.depth) || 5));
+  const h = Math.max(3, Math.min(7, Number(args.height) || 4));
+  const matName = String(args.material || '').toLowerCase();
+  const mat = matName ? findInventory(matName)
+    : (findInventory('planks') || findInventory('cobblestone') || findInventory('stone_brick')
+      || findInventory('stone') || findInventory('dirt'));
+  if (!mat) return { ok: false, message: 'no building blocks (planks/cobblestone/etc.) in inventory' };
+  const key = mat.name;
+  const s = bot.entity.position.floored();
+  const x0 = s.x; const y0 = s.y; const z0 = s.z;
+  const doorX = x0 + Math.floor(w / 2);
+  const onPerim = (x, z) => x === x0 || x === x0 + w - 1 || z === z0 || z === z0 + d - 1;
+  let placed = 0;
+  const start = Date.now();
+  const BUDGET = 150000;
+  for (let y = y0; y < y0 + h && Date.now() - start < BUDGET; y++) {
+    for (let x = x0; x < x0 + w; x++) {
+      for (let z = z0; z < z0 + d; z++) {
+        if (!onPerim(x, z)) continue;
+        if (x === doorX && z === z0 && (y === y0 || y === y0 + 1)) continue;  // doorway
+        if (await placeBlockAt(x, y, z, key)) placed++;
+        if (Date.now() - start > BUDGET) break;
+      }
+    }
+  }
+  if (args.roof !== false) {
+    const ry = y0 + h;
+    for (let x = x0; x < x0 + w && Date.now() - start < BUDGET; x++) {
+      for (let z = z0; z < z0 + d; z++) {
+        if (await placeBlockAt(x, ry, z, key)) placed++;
+      }
+    }
+  }
+  return { ok: placed > 0, message: `built a ${w}x${d}x${h} house (${placed} blocks placed)` };
 }
 
 async function equipBestWeapon() {
@@ -842,35 +932,56 @@ async function act(verb, args) {
       case 'smelt': {
         const inputName = String(args.input || args.name || '').toLowerCase();
         if (!inputName) return { ok: false, message: 'need an input (e.g. raw_iron)' };
-        const fb = bot.findBlock({ matching: idsForNames(['furnace', 'blast_furnace', 'smoker']), maxDistance: 16 });
-        if (!fb) return { ok: false, message: 'no furnace nearby (craft & place one first)' };
-        await bot.pathfinder.goto(new goals.GoalNear(fb.position.x, fb.position.y, fb.position.z, 2));
-        const input = findInventory(inputName);
-        if (!input) return { ok: false, message: `no ${inputName} to smelt` };
-        const furnace = await bot.openFurnace(bot.blockAt(fb.position));
-        try {
-          // Grab any finished output first to free the slot.
-          try { if (furnace.outputItem()) await furnace.takeOutput(); } catch (e) { /* ignore */ }
-          const count = args.count !== undefined ? Math.min(Number(args.count), input.count) : input.count;
-          await furnace.putInput(input.type, null, count);
-          const fuelName = String(args.fuel || '').toLowerCase();
-          const fuel = fuelName ? findInventory(fuelName) : findInventory('coal', 'charcoal', 'coal_block');
-          let fueled = false;
-          if (fuel) {
-            const need = Math.max(1, Math.ceil(count / 8));
-            await furnace.putFuel(fuel.type, null, Math.min(need, fuel.count));
-            fueled = true;
-          }
-          furnace.close();
-          return {
-            ok: true,
-            message: `smelting ${count} ${inputName}` + (fueled ? '' : ' — NO FUEL, add coal!')
-              + ' (collect later with take_smelted)',
-          };
-        } catch (e) {
-          try { furnace.close(); } catch (_) { /* ignore */ }
-          return { ok: false, message: `smelt failed: ${(e && e.message) || e}` };
+        return await smeltInput(inputName, String(args.fuel || '').toLowerCase() || null, args.count);
+      }
+
+      case 'cook': {
+        const RAW = ['beef', 'porkchop', 'chicken', 'mutton', 'rabbit', 'cod', 'salmon', 'potato', 'kelp'];
+        let inputName = String(args.food || args.input || '').toLowerCase();
+        if (!inputName) {
+          const raw = bot.inventory.items().find((i) => RAW.includes(i.name));
+          if (!raw) return { ok: false, message: 'no raw food to cook' };
+          inputName = raw.name;
         }
+        return await smeltInput(inputName, String(args.fuel || '').toLowerCase() || null, args.count);
+      }
+
+      case 'hunt': {
+        const want = String(args.animal || '').toLowerCase();
+        const names = want ? [want] : FOOD_ANIMALS;
+        await equipBestWeapon();
+        const maxKills = Math.max(1, Math.min(5, Number(args.count) || 1));
+        let kills = 0;
+        const start = Date.now();
+        while (kills < maxKills && Date.now() - start < 15000) {
+          let target = null;
+          let bestD = 20;
+          for (const id in bot.entities) {
+            const e = bot.entities[id];
+            if (!e || !e.position) continue;
+            if (names.includes(String(e.name || '').toLowerCase())) {
+              const dd = e.position.distanceTo(bot.entity.position);
+              if (dd < bestD) { bestD = dd; target = e; }
+            }
+          }
+          if (!target) break;
+          try {
+            await bot.pathfinder.goto(new goals.GoalNear(target.position.x, target.position.y, target.position.z, 2));
+            const t2 = Date.now();
+            while (target.isValid && Date.now() - t2 < 6000) {
+              await bot.lookAt(target.position.offset(0, 0.4, 0), true);
+              bot.attack(target);
+              await sleep(600);
+            }
+            kills++;
+          } catch (e) { break; }
+        }
+        return { ok: kills > 0, message: kills ? `hunted ${kills} animal(s) for food` : 'no food animals nearby' };
+      }
+
+      case 'build_house':
+      case 'build': {
+        return await buildHouse(args);
       }
 
       case 'take_smelted': {

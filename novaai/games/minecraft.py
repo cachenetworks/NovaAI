@@ -26,8 +26,8 @@ _VERBS = [
     "follow", "come", "bring", "find_in_chests", "withdraw", "store", "drop",
     "find_ores", "mine", "collect", "gather", "craft", "place_table", "place", "place_at",
     "till", "plant", "harvest", "bonemeal", "plant_tree",
-    "smelt", "take_smelted", "explore", "find_village", "list_trades", "trade",
-    "fish", "breed", "upgrade_tools",
+    "smelt", "cook", "take_smelted", "explore", "find_village", "list_trades", "trade",
+    "fish", "hunt", "breed", "upgrade_tools", "build_house",
     "attack", "punch", "defend", "equip", "equip_armor", "eat",
     "goto", "look", "sleep", "wake", "say", "wait", "stop",
 ]
@@ -144,12 +144,16 @@ class MinecraftDriver:
     def describe_state(self) -> str:
         return self.observe().text
 
+    # Verbs that legitimately take a long time (many block placements, etc.).
+    _LONG_VERBS = {"build_house", "build"}
+
     def act(self, command: GameCommand) -> dict[str, Any]:
+        timeout = 220 if command.verb in self._LONG_VERBS else self.config.game_tick_seconds + 20
         try:
             resp = requests.post(
                 self.base_url + "/act",
                 json={"verb": command.verb, "args": command.args},
-                timeout=self.config.game_tick_seconds + 20,
+                timeout=timeout,
             )
             if resp.ok:
                 return resp.json()
@@ -186,9 +190,12 @@ class MinecraftDriver:
             "(e.g. craft planks -> sticks -> wooden_pickaxe -> stone tools). "
             "place_table {} sets up a bench. upgrade_tools {} auto-crafts the best "
             "tools your materials allow (and equips a weapon).\n"
-            "- fish {} (needs a fishing rod + water). breed {animal?,food?}: feed two "
-            "nearby animals their food (cow/sheep=wheat, pig/rabbit=carrot, "
-            "chicken=wheat_seeds) so they breed.\n"
+            "- fish {} (needs a fishing rod + water). hunt {animal?,count?}: kill "
+            "passive animals (cow/pig/chicken/sheep) for raw meat. cook {food?}: "
+            "smelt raw meat/food into cooked food (needs a furnace). breed "
+            "{animal?,food?}: feed two nearby animals their food so they breed.\n"
+            "- build_house {width?,depth?,height?,material?}: build a walls+roof house "
+            "with a doorway from blocks you carry (gather/craft planks first).\n"
             "- Survival: you auto-eat when hungry (keeps you healed), but you can also "
             "eat {} on demand; equip {name,where?}; equip_armor {}.\n"
             "- follow/come {player?} (defaults to owner); bring {name,count?}; "
