@@ -14,7 +14,10 @@ The factory falls back to cloud when local RVC is unavailable or VRAM is low.
 """
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Protocol
 
@@ -28,6 +31,16 @@ class SingingError(RuntimeError):
     pass
 
 
+# Backing tracks downloaded from YouTube are compressed (webm/opus/m4a) and even
+# a gTTS render is mp3 — none of which torchaudio can decode without a backend.
+# ffmpeg decodes everything uniformly (and resamples), so it's the reliable path.
+FFMPEG_HINT = (
+    "Install ffmpeg so NovaAI can read YouTube/compressed audio and merge it with "
+    "the voice. Easiest: `pip install imageio-ffmpeg` (bundles a binary, no system "
+    "install). Or install ffmpeg and put it on PATH / set FFMPEG_PATH."
+)
+
+
 def _slugify(text: str) -> str:
     """A safe, stable filename for a song query (so we can cache + replay)."""
     s = re.sub(r"[^a-z0-9]+", "_", (text or "").lower()).strip("_")
@@ -36,6 +49,102 @@ def _slugify(text: str) -> str:
 
 def _is_url(ref: str) -> bool:
     return bool(re.match(r"https?://", (ref or "").strip(), re.I))
+
+
+def ffmpeg_exe() -> str | None:
+    """Locate an ffmpeg binary: FFMPEG_PATH env, PATH, or the imageio-ffmpeg one."""
+    env = os.getenv("FFMPEG_PATH") or os.getenv("FFMPEG_BINARY")
+    if env and Path(env).exists():
+        return env
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg  # type: ignore
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+def _ydl_to_wav(opts: dict) -> dict:
+    """If ffmpeg is available, have yt-dlp transcode the download to wav so the
+    cached backing is directly decodable later (no ffmpeg needed on replay)."""
+    ff = ffmpeg_exe()
+    if ff:
+        opts["ffmpeg_location"] = ff
+        opts["postprocessors"] = [
+            {"key": "FFmpegExtractAudio", "preferredcodec": "wav"}
+        ]
+    return opts
+
+
+def _resample(mono, src_sr: int, dst_sr: int):
+    import numpy as np
+
+    if src_sr == dst_sr or len(mono) == 0:
+        return mono
+    idx = np.linspace(0, len(mono) - 1, int(len(mono) * dst_sr / src_sr))
+    return np.interp(idx, np.arange(len(mono)), mono).astype(np.float32)
+
+
+def decode_audio_mono(path: str | Path, target_sr: int):
+    """Decode any audio file to a mono float32 array at *target_sr*.
+
+    Tries ffmpeg first (handles webm/opus/m4a/mp3/wav and resamples in one go),
+    then stdlib WAV, then torchaudio. Raises SingingError if nothing can read it.
+    """
+    import numpy as np
+
+    p = Path(path)
+    if not p.exists():
+        raise SingingError(f"Audio file not found: {p}")
+
+    # 1. ffmpeg → raw mono float32 at the target rate (most robust).
+    ff = ffmpeg_exe()
+    if ff:
+        try:
+            proc = subprocess.run(
+                [ff, "-v", "error", "-i", str(p), "-ac", "1",
+                 "-ar", str(target_sr), "-f", "f32le", "-"],
+                capture_output=True,
+            )
+            if proc.returncode == 0 and proc.stdout:
+                return np.frombuffer(proc.stdout, dtype=np.float32).copy()
+        except Exception:
+            pass
+
+    # 2. Plain WAV via the stdlib (works without ffmpeg for user-supplied .wav).
+    if p.suffix.lower() == ".wav":
+        try:
+            import wave
+
+            with wave.open(str(p), "rb") as w:
+                ch, sw, fr = w.getnchannels(), w.getsampwidth(), w.getframerate()
+                raw = w.readframes(w.getnframes())
+            if sw == 1:
+                data = (np.frombuffer(raw, np.uint8).astype(np.float32) - 128.0) / 128.0
+            elif sw == 4:
+                data = np.frombuffer(raw, np.int32).astype(np.float32) / 2147483648.0
+            else:  # assume 16-bit
+                data = np.frombuffer(raw, np.int16).astype(np.float32) / 32768.0
+            if ch > 1:
+                data = data.reshape(-1, ch).mean(axis=1)
+            return _resample(data, fr, target_sr)
+        except Exception:
+            pass
+
+    # 3. torchaudio, if it happens to have a usable backend.
+    try:
+        import torchaudio
+
+        wav, bt_sr = torchaudio.load(str(p))
+        mono = wav.mean(dim=0).numpy().astype(np.float32)
+        return _resample(mono, bt_sr, target_sr)
+    except Exception:
+        pass
+
+    raise SingingError(f"Couldn't decode '{p.name}'. {FFMPEG_HINT}")
 
 
 def download_audio_url(url: str, timeout: int = 120) -> Path | None:
@@ -63,6 +172,7 @@ def download_audio_url(url: str, timeout: int = 120) -> Path | None:
         "outtmpl": str(base) + ".%(ext)s",
         "socket_timeout": timeout,
     }
+    _ydl_to_wav(opts)
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
@@ -87,7 +197,7 @@ def fetch_instrumental(query: str, timeout: int = 90) -> Path | None:
     cache = SONGS_DIR / "backing"
     cache.mkdir(parents=True, exist_ok=True)
     base = cache / (_slugify(query) + "_instrumental")
-    for ext in (".m4a", ".webm", ".mp3", ".opus"):
+    for ext in (".m4a", ".webm", ".mp3", ".opus", ".wav"):
         if base.with_suffix(ext).exists():
             return base.with_suffix(ext)
 
@@ -100,6 +210,7 @@ def fetch_instrumental(query: str, timeout: int = 90) -> Path | None:
         "outtmpl": str(base) + ".%(ext)s",
         "socket_timeout": timeout,
     }
+    _ydl_to_wav(opts)
     search = f"{query} instrumental karaoke no vocals"
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -264,22 +375,30 @@ class LocalSingingEngine:
             data = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
         return data.astype(np.float32) / 32768.0
 
-    def _resolve_backing(self, melody_ref: str | None, query: str) -> str | None:
-        """Pick the backing track: an explicit file/YouTube URL the user gave,
-        else (optionally) auto-find an instrumental on YouTube. Returns a local
-        path (downloading the URL if needed), or None for an a cappella render.
+    def _resolve_backing(self, melody_ref: str | None, query: str) -> tuple[str | None, bool]:
+        """Pick the backing track and whether the user *explicitly* asked for one.
+
+        Returns (path, explicit). `explicit` is True when the user supplied a file
+        path or YouTube URL — those failing to decode is an error worth surfacing.
+        Auto-found instrumentals (explicit=False) are best-effort and degrade to an
+        a cappella render silently.
         """
-        if melody_ref:
+        if melody_ref and melody_ref.strip():
             ref = melody_ref.strip()
             if _is_url(ref):
                 got = download_audio_url(ref)
-                return str(got) if got else None
-            return ref  # local file path; _mix_backing validates existence
+                if not got:
+                    raise SingingError(
+                        f"Couldn't download that backing track from YouTube. "
+                        f"Make sure yt-dlp is installed (pip install yt-dlp). {FFMPEG_HINT}"
+                    )
+                return str(got), True
+            return ref, True  # local file path; decode validates existence
         if self.config.singing_fetch_instrumental:
             found = fetch_instrumental(query)
             if found:
-                return str(found)
-        return None
+                return str(found), False
+        return None, False
 
     def _sing_gtts(self, lyrics: str, out_base: Path, melody_ref: str | None = None) -> Path:
         """gTTS path: render the lyrics to mp3, then (if there's a backing track)
@@ -291,27 +410,29 @@ class LocalSingingEngine:
         tts_mp3 = out_base.with_suffix(".mp3")
         synthesize_gtts_to_file(text, self.config, tts_mp3)
 
-        backing = self._resolve_backing(melody_ref, lyrics)
+        backing, explicit = self._resolve_backing(melody_ref, lyrics)
         if not backing:
             return tts_mp3
-        mixed = self._mix_files(tts_mp3, backing, out_base)
+        mixed = self._mix_files(tts_mp3, backing, out_base, explicit)
         return mixed or tts_mp3
 
-    def _mix_files(self, vocal_path: Path, backing_path: str, out_base: Path) -> Path | None:
+    def _mix_files(self, vocal_path: Path, backing_path: str, out_base: Path,
+                   explicit: bool) -> Path | None:
         """Decode a rendered vocal file + backing track and write one mixed wav."""
+        import numpy as np
+
+        from .tts import write_wav_audio
+
+        sr = 44100
         try:
-            import numpy as np
-            import torchaudio
-
-            from .tts import write_wav_audio
-
-            wav, sr = torchaudio.load(str(vocal_path))
-            vocal = wav.mean(dim=0).numpy().astype(np.float32)
-            track = self._mix_backing(vocal, sr, backing_path)
-            np.clip(track, -1.0, 1.0, out=track)
-            return write_wav_audio(out_base.with_suffix(".wav"), [track], sr)
-        except Exception:
+            vocal = decode_audio_mono(vocal_path, sr)
+        except SingingError:
+            if explicit:
+                raise
             return None
+        track = self._mix_backing(vocal, sr, backing_path, explicit)
+        np.clip(track, -1.0, 1.0, out=track)
+        return write_wav_audio(out_base.with_suffix(".wav"), [track], sr)
 
     def sing(self, lyrics: str, melody_ref: str | None = None) -> Path:
         import numpy as np
@@ -361,12 +482,12 @@ class LocalSingingEngine:
 
         # Backing: an explicit file path, a YouTube URL the user pasted, or an
         # auto-found instrumental — merged with the vocals into this one file.
-        backing = self._resolve_backing(melody_ref, lyrics)
-        track = self._mix_backing(track, sr, backing)
+        backing, explicit = self._resolve_backing(melody_ref, lyrics)
+        track = self._mix_backing(track, sr, backing, explicit)
         np.clip(track, -1.0, 1.0, out=track)
         return write_wav_audio(cached, [track], sr)
 
-    def _mix_backing(self, vocal, sr, melody_ref):
+    def _mix_backing(self, vocal, sr, melody_ref, explicit: bool = False):
         import numpy as np
 
         if not melody_ref:
@@ -377,22 +498,20 @@ class LocalSingingEngine:
 
             path = ROOT_DIR / melody_ref
         if not path.exists():
+            if explicit:
+                raise SingingError(f"Backing track not found: {path}")
             return vocal
         try:
-            import torchaudio  # decodes mp3/wav/flac
-
-            wav, bt_sr = torchaudio.load(str(path))
-            mono = wav.mean(dim=0).numpy().astype(np.float32)
-            if bt_sr != sr:  # linear resample to the vocal rate
-                idx = np.linspace(0, len(mono) - 1, int(len(mono) * sr / bt_sr))
-                mono = np.interp(idx, np.arange(len(mono)), mono).astype(np.float32)
-            length = max(len(vocal), len(mono))
-            out = np.zeros(length, dtype=np.float32)
-            out[: len(mono)] += mono * 0.5            # backing quieter
-            out[: len(vocal)] += vocal * 0.95         # vocal on top
-            return out
-        except Exception:
-            return vocal
+            mono = decode_audio_mono(path, sr)
+        except SingingError:
+            if explicit:
+                raise  # user gave this track on purpose — tell them why it failed
+            return vocal  # auto-found instrumental: just sing a cappella
+        length = max(len(vocal), len(mono))
+        out = np.zeros(length, dtype=np.float32)
+        out[: len(mono)] += mono * 0.5            # backing quieter
+        out[: len(vocal)] += vocal * 0.95         # vocal on top
+        return out
 
 
 def make_singing_engine(config: Config) -> SingingEngine:

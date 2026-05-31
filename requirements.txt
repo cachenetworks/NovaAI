@@ -16,8 +16,13 @@ dateparser>=1.1,<2
 pywebview[cef]>=5.3,<6
 
 sentence-transformers>=2.7,<3.3
-# Optional singing extra: auto-find instrumental backing tracks on YouTube.
-#   pip install yt-dlp   (FFmpeg recommended for best audio decoding)
+# Optional singing extras: auto-find / download instrumental backing tracks on
+# YouTube and merge them with the AI voice into one song.
+#   pip install yt-dlp imageio-ffmpeg
+#   yt-dlp        - downloads the backing track (or your pasted YouTube URL)
+#   imageio-ffmpeg- bundles an ffmpeg binary so NovaAI can DECODE + MERGE the
+#                   backing with the voice. Without ffmpeg, only the voice plays.
+#                   (A system ffmpeg on PATH, or FFMPEG_PATH=..., works too.)
 # Optional game-playing extras (install as needed; lazy-imported by drivers):
 #   Universal vision+input driver (Terraria/Unturned/Celeste/etc.):
 #     pip install mss pillow pydirectinput   (pydirectinput is Windows-only)
