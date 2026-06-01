@@ -28,7 +28,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--gui",
         action="store_true",
-        help="Launch the desktop GUI instead of the terminal chat loop.",
+        help="Launch the native desktop GUI (needs a display + pywebview).",
+    )
+    parser.add_argument(
+        "--web",
+        "--serve",
+        dest="web",
+        action="store_true",
+        help=(
+            "Run the headless web UI: serve the browser interface over HTTP so "
+            "you can reach NovaAI from any device. Best for a headless Pi/Linux box. "
+            "Configure with NOVA_WEB_HOST / NOVA_WEB_PORT (default 0.0.0.0:8800)."
+        ),
     )
     return parser
 
@@ -98,6 +109,12 @@ def main() -> None:
     args = build_parser().parse_args()
     ensure_setup()
     maybe_apply_startup_update()
+    if args.web:
+        from .webserver import main as web_main
+
+        web_main()
+        return
+
     if args.gui:
         from .webgui import main as gui_main
 

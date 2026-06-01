@@ -1,0 +1,23 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NovaAI — native DESKTOP GUI extra (optional).
+#
+# Install on top of the base requirements only if you want the native desktop
+# window (`python app.py --gui`) instead of the browser web UI:
+#   pip install -r requirements.txt -r requirements-gui.txt
+#
+# Not needed for a headless box — use `python app.py --web` and open Nova from
+# any browser on your network instead.
+#
+# Platform notes:
+#   • Windows uses the bundled CEF (Chromium) backend.
+#   • Linux/macOS render through the OS WebView (WebKitGTK / Qt / Cocoa). The
+#     `cef` extra is x86-64/Windows-only and has NO ARM wheels, so the marker
+#     below keeps it off Linux/Raspberry Pi entirely.
+#
+#     On Linux you also need the system WebView libraries, e.g. on Debian/Ubuntu:
+#       sudo apt install gir1.2-webkit2-4.1 python3-gi gir1.2-gtk-3.0
+#     (or `pip install pywebview[qt]` plus PyQt/PySide if you prefer the Qt backend).
+# ─────────────────────────────────────────────────────────────────────────────
+
+pywebview[cef]>=5.3,<6 ; sys_platform == "win32"
+pywebview>=5.3,<6 ; sys_platform != "win32"

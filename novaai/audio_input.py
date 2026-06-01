@@ -1,16 +1,49 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
-import sounddevice as sd
-import speech_recognition as sr
-import torch
+
+# sounddevice (PortAudio), SpeechRecognition and torch are optional voice extras.
+# Guard them so NovaAI imports and runs text-only (CLI / headless web) on machines
+# without a microphone or the heavy ML stack (e.g. a headless Raspberry Pi).
+try:
+    import sounddevice as sd
+except (ImportError, OSError):  # OSError: PortAudio shared lib missing
+    sd = None  # type: ignore[assignment]
+try:
+    import speech_recognition as sr
+except ImportError:
+    sr = None  # type: ignore[assignment]
+try:
+    import torch
+except ImportError:
+    torch = None  # type: ignore[assignment]
 
 from .config import Config
 from .models import SessionState, SpeechCapture, UserTurn
 from .utils import console_safe_text
+
+if TYPE_CHECKING:
+    import speech_recognition as sr  # noqa: F811
+
+
+VOICE_EXTRAS_HINT = (
+    "Voice support is not installed. Install the optional extras with:\n"
+    "    pip install -r requirements-voice.txt"
+)
+
+
+def _require_audio() -> None:
+    """Raise a friendly error if the optional voice/mic stack is unavailable."""
+    missing = [
+        name
+        for name, mod in (("sounddevice", sd), ("SpeechRecognition", sr))
+        if mod is None
+    ]
+    if missing:
+        raise RuntimeError(VOICE_EXTRAS_HINT)
 
 
 class SoundDeviceStream:
@@ -29,13 +62,20 @@ class SoundDeviceStream:
         self.raw_stream.close()
 
 
-class SoundDeviceMicrophone(sr.AudioSource):
+# Resolve the base class at import time: subclass sr.AudioSource when available,
+# otherwise fall back to object so the module still imports without the voice
+# extras (instantiating the class then raises a friendly error via _require_audio).
+_AudioSourceBase = sr.AudioSource if sr is not None else object
+
+
+class SoundDeviceMicrophone(_AudioSourceBase):
     def __init__(
         self,
         device_index: int | None = None,
         sample_rate: int | None = None,
         chunk_size: int = 1024,
     ):
+        _require_audio()
         assert device_index is None or isinstance(device_index, int)
         assert sample_rate is None or (
             isinstance(sample_rate, int) and sample_rate > 0
@@ -80,7 +120,7 @@ class SoundDeviceMicrophone(sr.AudioSource):
 
 
 def get_stt_device(config: Config) -> str:
-    if config.stt_use_gpu and torch.cuda.is_available():
+    if config.stt_use_gpu and torch is not None and torch.cuda.is_available():
         return "cuda"
     return "cpu"
 
@@ -94,6 +134,8 @@ def get_stt_compute_type(config: Config) -> str:
 
 
 def get_default_input_device_index() -> int | None:
+    if sd is None:
+        return None
     default_device = sd.default.device
     if isinstance(default_device, (list, tuple)):
         if not default_device:
@@ -136,6 +178,7 @@ def get_hostapi_names() -> list[str]:
 
 
 def resolve_input_device_info(device_index: int | None) -> dict[str, Any]:
+    _require_audio()
     try:
         if device_index is None:
             device = sd.query_devices(kind="input")
@@ -168,6 +211,8 @@ def resolve_input_device_info(device_index: int | None) -> dict[str, Any]:
 
 
 def list_input_devices() -> list[dict[str, Any]]:
+    if sd is None:
+        return []
     try:
         devices = sd.query_devices()
     except Exception as exc:
@@ -189,6 +234,8 @@ def list_input_devices() -> list[dict[str, Any]]:
 
 
 def list_input_devices_compact(max_devices: int = 24) -> list[dict[str, Any]]:
+    if sd is None:
+        return []
     try:
         devices = sd.query_devices()
     except Exception as exc:
@@ -282,7 +329,8 @@ def get_speech_recognizer_signature(config: Config) -> tuple[Any, ...]:
     )
 
 
-def build_speech_recognizer(config: Config) -> sr.Recognizer:
+def build_speech_recognizer(config: Config) -> "sr.Recognizer":
+    _require_audio()
     recognizer = sr.Recognizer()
     recognizer.energy_threshold = max(50, config.stt_energy_threshold)
     recognizer.dynamic_energy_threshold = config.stt_dynamic_energy_threshold

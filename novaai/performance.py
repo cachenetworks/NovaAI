@@ -4,7 +4,10 @@ import ctypes
 import os
 from dataclasses import dataclass
 
-import torch
+try:
+    import torch
+except ImportError:  # torch is an optional voice/GPU extra; absent on minimal installs
+    torch = None  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -83,7 +86,7 @@ def _get_total_memory_bytes() -> int | None:
 
 
 def _get_primary_gpu_info() -> tuple[bool, str | None, float | None]:
-    if not torch.cuda.is_available():
+    if torch is None or not torch.cuda.is_available():
         return False, None, None
 
     try:

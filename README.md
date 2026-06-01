@@ -65,16 +65,20 @@ curl -fsSL https://raw.githubusercontent.com/cachenetworks/NovaAI/main/install.s
 python setup.py          # or python3 on Linux
 ```
 
-First run does the full setup, then launches the GUI. Subsequent runs skip straight to launch.
+First run does the full setup, then launches the GUI (or the browser web UI on a
+headless machine). Subsequent runs skip straight to launch.
 
 ### 📋 All commands
 
 ```bash
-python setup.py              # Setup (if needed) + launch GUI
-python setup.py --launch     # 🖥️ Launch GUI
+python setup.py              # Setup (if needed) + launch (GUI, or web UI if headless)
+python setup.py --launch     # 🖥️ Launch desktop GUI
+python setup.py --web        # 🌐 Launch headless browser web UI (great for a Pi/server)
 python setup.py --terminal   # ⌨️ Terminal mode
 python setup.py --setup      # 🔧 Re-run setup only
 python setup.py --update     # 🔄 Check for updates
+
+python app.py --web          # 🌐 Same web UI, started directly (0.0.0.0:8800)
 ```
 
 ---
@@ -579,23 +583,65 @@ PRs welcome! If you're not sure where to start, open an issue and we'll point yo
 
 ---
 
-## 🐧 Linux Support
+## 🐧 Linux & Raspberry Pi Support
 
-> NovaAI runs on both **Windows** and **Linux**. Here's the compatibility status:
+> NovaAI runs on **Windows**, **amd64 Linux**, and **ARM64 / Raspberry Pi 5**.
+
+### Install profiles
+
+Voice and the native desktop GUI are now **optional add-ons**, so a headless box
+installs only what it needs. `install.sh` asks which profile you want; you can also
+pick manually:
+
+| Profile | Installs | Good for |
+|---|---|---|
+| **Minimal** | `requirements.txt` | Text chat + **browser web UI**. Smallest, ARM-friendly. Recommended for a Pi. |
+| **+ Voice** | `+ requirements-voice.txt` | Mic, speech-to-text, XTTS/gTTS, embeddings, singing (large; needs a mic/speakers). |
+| **+ Desktop GUI** | `+ requirements-gui.txt` | The native pywebview window (needs a display). |
+| **Everything** | all three | A full desktop machine. |
+
+```bash
+pip install -r requirements.txt                          # minimal (text + web UI)
+pip install -r requirements.txt -r requirements-voice.txt # add voice/ML
+pip install -r requirements.txt -r requirements-gui.txt   # add the desktop GUI
+```
+
+> The desktop GUI's CEF backend is Windows-only; on Linux/ARM `requirements-gui.txt`
+> uses your system WebView instead (`gir1.2-webkit2-4.1` on Debian/Ubuntu).
+
+### 🍓 Raspberry Pi 5 / headless quick-start
+
+A Pi (or any server) usually has no monitor, mic, or speakers — so run the **browser
+web UI** and reach Nova from another device:
+
+```bash
+git clone https://github.com/cachenetworks/NovaAI && cd NovaAI
+python3 setup.py --setup        # choose the "Minimal" profile when asked
+sudo apt install ffmpeg         # optional, for audio playback later
+python3 app.py --web            # serves the UI on 0.0.0.0:8800
+```
+
+Then open `http://<pi-ip>:8800` in any browser on your network. Prefer the terminal?
+`python3 app.py` gives you the same companion as a text chat over SSH.
+
+- Host/port are configurable: `NOVA_WEB_HOST` / `NOVA_WEB_PORT` (default `0.0.0.0:8800`).
+- On a box with no audio hardware, keep `VOICE_ENABLED=false` (the default) and set
+  `INPUT_MODE=text` in `.env` so the terminal mode never reaches for a microphone.
+- Voice can be added later — `pip install -r requirements-voice.txt` — once you attach
+  a mic/speakers. XTTS runs on CPU there, so expect it to be slow.
 
 ### ✅ Done
 
-- [x] **`setup.py`** — Cross-platform venv paths, subprocess flags, Ollama detection
-- [x] **`novaai/tts.py`** — Linux audio playback via ffplay, ALSA/PulseAudio/PipeWire/JACK host API support
-- [x] **`novaai/updater.py`** — Git detection works on both platforms
-- [x] **`novaai/launcher.py`** — Platform-aware setup call
-- [x] **`install.sh`** — Full Linux installer (Python, LLM provider, Ollama, CUDA, desktop launcher)
-- [x] README updated with Linux install instructions
+- [x] **Minimal install runs without torch/coqui/PortAudio** — voice/ML imports are lazy
+- [x] **`python app.py --web`** — headless browser UI (no display/pywebview needed)
+- [x] **ARM64 / Raspberry Pi 5** — `pip install` no longer pulls Windows-only `cefpython3`
+- [x] **`install.sh`** — arch/distro-aware system deps, install-profile prompt, headless detection
+- [x] **`novaai/tts.py`** — Linux audio playback via ffplay, ALSA/PulseAudio/PipeWire/JACK support
 
 ### 🗺️ Roadmap
 
+- [ ] systemd service / auto-start on boot for the web UI
 - [ ] Test on more distros (Fedora, Arch, NixOS)
-- [ ] Wayland-specific pywebview testing
 - [ ] macOS support
 
 ---

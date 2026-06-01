@@ -1,30 +1,23 @@
-coqui-tts>=0.27,<0.28
+# ─────────────────────────────────────────────────────────────────────────────
+# NovaAI — BASE requirements (text chat + headless web UI).
+#
+# This set is intentionally small, pure-Python where possible, and installs on
+# every platform NovaAI targets, including aarch64 / Raspberry Pi 5. It is all
+# you need for the terminal chat loop (`python app.py`) and the browser-based
+# web UI (`python app.py --web`).
+#
+# Voice (speech-in / speech-out / singing) and the native desktop GUI are
+# optional add-ons — install them only if you want those features:
+#   pip install -r requirements-voice.txt   # mic, STT, TTS/XTTS, embeddings
+#   pip install -r requirements-gui.txt     # native pywebview desktop window
+# ─────────────────────────────────────────────────────────────────────────────
+
 python-dotenv>=1.0,<2
 requests>=2.32,<3
 duckduckgo-search>=6,<8
-gTTS>=2.5,<3
-sounddevice>=0.5,<0.6
-SpeechRecognition>=3.16,<4
-faster-whisper>=1.2,<2
-
-torch>=2.2,<3
-torchaudio>=2.2,<3
-
-transformers>=4.40,<5
-websockets>=11,<12
 dateparser>=1.1,<2
-pywebview[cef]>=5.3,<6
+numpy>=1.24,<3
 
-sentence-transformers>=2.7,<3.3
-# Optional singing extras: auto-find / download instrumental backing tracks on
-# YouTube and merge them with the AI voice into one song.
-#   pip install yt-dlp imageio-ffmpeg
-#   yt-dlp        - downloads the backing track (or your pasted YouTube URL)
-#   imageio-ffmpeg- bundles an ffmpeg binary so NovaAI can DECODE + MERGE the
-#                   backing with the voice. Without ffmpeg, only the voice plays.
-#                   (A system ffmpeg on PATH, or FFMPEG_PATH=..., works too.)
-# Optional game-playing extras (install as needed; lazy-imported by drivers):
-#   Universal vision+input driver (Terraria/Unturned/Celeste/etc.):
-#     pip install mss pillow pydirectinput   (pydirectinput is Windows-only)
-#   VRChat OSC driver:
-#     pip install python-osc
+# Lightweight, pure-Python WebSocket server used by the optional 3D avatar
+# bridge (and harmless to keep in the base set on all platforms).
+websockets>=11,<12

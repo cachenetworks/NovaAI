@@ -29,6 +29,8 @@ ENV_EXAMPLE = ROOT_DIR / ".env.example"
 DATA_DIR = ROOT_DIR / "data"
 AUDIO_DIR = ROOT_DIR / "audio"
 REQUIREMENTS = ROOT_DIR / "requirements.txt"
+VOICE_REQUIREMENTS = ROOT_DIR / "requirements-voice.txt"
+GUI_REQUIREMENTS = ROOT_DIR / "requirements-gui.txt"
 DEFAULT_OLLAMA_MODEL = "dolphin3"
 DEFAULT_OLLAMA_API_URL = "http://127.0.0.1:11434/api/chat"
 OPENAI_COMPATIBLE_PROVIDERS = {
@@ -136,12 +138,45 @@ def ensure_venv() -> None:
         raise RuntimeError("Failed to create virtual environment.")
 
 
+def resolve_install_profile() -> str:
+    """Which dependency set to install.
+
+    Controlled by NOVA_INSTALL_PROFILE (set by install.sh's profile prompt):
+        minimal -> base only (text chat + headless web UI)
+        voice   -> base + voice/ML extras
+        gui     -> base + native desktop GUI extra
+        full    -> base + voice + gui  (default; preserves Windows behavior)
+    """
+    profile = os.getenv("NOVA_INSTALL_PROFILE", "full").strip().lower()
+    if profile in {"minimal", "voice", "gui", "full"}:
+        return profile
+    return "full"
+
+
 def install_requirements() -> None:
-    """Upgrade pip and install requirements.txt into the venv."""
+    """Upgrade pip and install the requested dependency profile into the venv."""
+    profile = resolve_install_profile()
     print("    Upgrading pip...")
     run([str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "pip", "-q"])
-    print("    Installing packages...")
-    run([str(VENV_PYTHON), "-m", "pip", "install", "-r", str(REQUIREMENTS), "-q"])
+
+    req_files = [REQUIREMENTS]
+    if profile in {"voice", "full"} and VOICE_REQUIREMENTS.exists():
+        req_files.append(VOICE_REQUIREMENTS)
+    if profile in {"gui", "full"} and GUI_REQUIREMENTS.exists():
+        req_files.append(GUI_REQUIREMENTS)
+
+    labels = {
+        "minimal": "base (text + web UI)",
+        "voice": "base + voice/ML extras",
+        "gui": "base + desktop GUI",
+        "full": "everything (voice + desktop GUI)",
+    }
+    print(f"    Installing packages [{labels[profile]}]...")
+    cmd = [str(VENV_PYTHON), "-m", "pip", "install"]
+    for req in req_files:
+        cmd += ["-r", str(req)]
+    cmd.append("-q")
+    run(cmd)
 
 
 # ── Game bridge (optional) ─────────────────────────────────────────────────────
@@ -366,13 +401,16 @@ def full_setup() -> None:
         step(5, total, "Skipping Ollama start (not needed).")
         step(6, total, "Skipping Ollama model pull (not needed).")
 
-    step(7, total, "Preloading speech and voice models...")
-    try:
-        preload_models()
-        print("    Models cached.")
-    except Exception as exc:
-        print(f"    Warning: Model preload failed — {exc}")
-        print("    Models will be downloaded on first use instead.")
+    if resolve_install_profile() in {"voice", "full"}:
+        step(7, total, "Preloading speech and voice models...")
+        try:
+            preload_models()
+            print("    Models cached.")
+        except Exception as exc:
+            print(f"    Warning: Model preload failed — {exc}")
+            print("    Models will be downloaded on first use instead.")
+    else:
+        step(7, total, "Skipping voice model preload (text/web-only install).")
 
     step(8, total, "Checking game bridge (Minecraft)...")
     game_enabled = parse_bool_value(env_values.get("GAME_ENABLED") or "false")
@@ -397,7 +435,11 @@ def full_setup() -> None:
     print("    Done.")
 
     banner("NovaAI Setup Complete")
-    print("  Launch the GUI:        python setup.py --launch")
+    if is_headless():
+        print("  Launch the web UI:     python setup.py --web   (open it in a browser)")
+    else:
+        print("  Launch the GUI:        python setup.py --launch")
+        print("  Launch the web UI:     python setup.py --web   (browser / remote access)")
     print("  Launch terminal mode:  python setup.py --terminal")
     print("  Run full setup again:  python setup.py --setup")
     print()
@@ -405,11 +447,27 @@ def full_setup() -> None:
 
 # ── Launch ───────────────────────────────────────────────────────────────────
 
+def is_headless() -> bool:
+    """True when there's no graphical display to host the native GUI."""
+    if IS_WINDOWS:
+        return False
+    if sys.platform == "darwin":
+        return False
+    return not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
 def launch_gui() -> None:
     """Launch the desktop GUI."""
     if not VENV_PYTHON.exists() or not SETUP_MARKER.exists():
         full_setup()
     run([str(VENV_PYTHON), str(ROOT_DIR / "app.py"), "--gui"])
+
+
+def launch_web() -> None:
+    """Launch the headless browser web UI."""
+    if not VENV_PYTHON.exists() or not SETUP_MARKER.exists():
+        full_setup()
+    run([str(VENV_PYTHON), str(ROOT_DIR / "app.py"), "--web"])
 
 
 def launch_terminal() -> None:
@@ -445,6 +503,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Launch the desktop GUI (runs setup first if needed).",
     )
     group.add_argument(
+        "--web",
+        action="store_true",
+        help="Launch the headless browser web UI (runs setup first if needed).",
+    )
+    group.add_argument(
         "--terminal",
         action="store_true",
         help="Launch in terminal mode (runs setup first if needed).",
@@ -464,15 +527,21 @@ def main() -> None:
         full_setup()
     elif args.launch:
         launch_gui()
+    elif args.web:
+        launch_web()
     elif args.terminal:
         launch_terminal()
     elif args.update:
         run_update()
     else:
-        # Default: setup if needed, then launch GUI
+        # Default: setup if needed, then launch. On a headless box (no display)
+        # there's no window to show, so fall back to the browser web UI.
         if not VENV_PYTHON.exists() or not SETUP_MARKER.exists():
             full_setup()
-        launch_gui()
+        if is_headless():
+            launch_web()
+        else:
+            launch_gui()
 
 
 if __name__ == "__main__":

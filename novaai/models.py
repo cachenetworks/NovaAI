@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-import speech_recognition as sr
-import torch
-from TTS.api import TTS
+# These are heavy, optional, voice-only dependencies. They are referenced here
+# only as type annotations, and `from __future__ import annotations` keeps those
+# annotations as strings that are never evaluated at runtime — so importing them
+# under TYPE_CHECKING lets NovaAI run text-only (CLI / headless web) without
+# torch, coqui-tts, or PortAudio installed.
+if TYPE_CHECKING:
+    import speech_recognition as sr
+    import torch
+    from TTS.api import TTS
 
 
 @dataclass

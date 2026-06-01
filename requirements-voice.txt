@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NovaAI — VOICE / ML extras (optional).
+#
+# Install on top of the base requirements when you want speech input, spoken
+# replies, local memory embeddings, or singing:
+#   pip install -r requirements.txt -r requirements-voice.txt
+#
+# Heads-up for Raspberry Pi / ARM: torch + coqui-tts are large and XTTS voice
+# synthesis runs on CPU there, so it will be slow. You only need these if the
+# Pi actually has a microphone/speakers. For a headless text/web box, skip this.
+#
+# GPU users: after installing, optionally replace torch/torchaudio with a CUDA
+# build, e.g.:
+#   pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Speech in (microphone + speech-to-text)
+sounddevice>=0.5,<0.6
+SpeechRecognition>=3.16,<4
+faster-whisper>=1.2,<2
+
+# Speech out (text-to-speech)
+coqui-tts>=0.27,<0.28
+gTTS>=2.5,<3
+
+# ML runtime used by XTTS, STT and embeddings
+torch>=2.2,<3
+torchaudio>=2.2,<3
+transformers>=4.40,<5
+
+# Local memory embeddings (lazy-imported by novaai/memory.py)
+sentence-transformers>=2.7,<3.3
+
+# Singing extras: download/merge instrumental backing tracks with the AI voice.
+#   yt-dlp         - downloads the backing track (or your pasted YouTube URL)
+#   imageio-ffmpeg - bundles an ffmpeg binary so NovaAI can DECODE + MERGE the
+#                    backing with the voice. (A system ffmpeg on PATH, or
+#                    FFMPEG_PATH=..., works too.)
+yt-dlp>=2024.1
+imageio-ffmpeg>=0.4

@@ -11,9 +11,15 @@ import time
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-import webview
+# pywebview is the OPTIONAL native-desktop-GUI backend. The headless web server
+# (novaai/webserver.py) reuses the Api class from this module without needing it,
+# so guard the import: it's only actually used inside main() for `--gui`.
+try:
+    import webview
+except ImportError:  # pragma: no cover - desktop GUI extra not installed
+    webview = None  # type: ignore[assignment]
 
 from .audio_input import (
     describe_selected_microphone,
@@ -87,7 +93,10 @@ from .web_search import (
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 ICON_PATH = Path(__file__).resolve().parent.parent / "data" / "logo.ico"
-_window: webview.Window | None = None
+_window: "webview.Window | None" = None
+# Pluggable JS sink for headless web mode. When set (by novaai/webserver.py),
+# Api._js() relays code here instead of to a pywebview window. See _js().
+_emit_js: "Callable[[str], None] | None" = None
 
 # Per-driver game settings shown in the Game panel (instead of editing .env).
 # Each field maps to a Config attribute; values are persisted to app_state.
@@ -316,10 +325,21 @@ class Api:
         return None
 
     def _js(self, code: str) -> None:
-        global _window
+        """Push JavaScript to the frontend.
+
+        In the native desktop GUI this runs in the pywebview window. In headless
+        web mode (novaai/webserver.py) there is no window, so the code is handed
+        to a pluggable sink (`_emit_js`) that relays it to connected browsers.
+        """
+        global _window, _emit_js
         if _window:
             try:
                 _window.evaluate_js(code)
+            except Exception:
+                pass
+        elif _emit_js is not None:
+            try:
+                _emit_js(code)
             except Exception:
                 pass
 
@@ -1861,6 +1881,12 @@ def _set_window_icon() -> None:
 
 def main() -> None:
     global _window
+    if webview is None:
+        raise SystemExit(
+            "The desktop GUI needs pywebview, which isn't installed.\n"
+            "Install it with:  pip install -r requirements-gui.txt\n"
+            "Or run the headless browser UI instead:  python app.py --web"
+        )
     api = Api()
     html_path = STATIC_DIR / "index.html"
 

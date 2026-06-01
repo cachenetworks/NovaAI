@@ -12,11 +12,36 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import sounddevice as sd
-import torch
-from TTS.api import TTS
 
-from .audio_input import get_hostapi_names, normalize_audio_device_name
+# sounddevice (PortAudio), torch and coqui-tts (TTS) are optional voice extras.
+# Guard them so this module imports text-only (CLI / headless web) on machines
+# without speakers or the heavy ML stack (e.g. a headless Raspberry Pi). The
+# functions that actually synthesize/play audio call the _require_* helpers.
+try:
+    import sounddevice as sd
+except (ImportError, OSError):  # OSError: PortAudio shared lib missing
+    sd = None  # type: ignore[assignment]
+try:
+    import torch
+except ImportError:
+    torch = None  # type: ignore[assignment]
+try:
+    from TTS.api import TTS
+except ImportError:
+    TTS = None  # type: ignore[assignment]
+
+from .audio_input import (
+    VOICE_EXTRAS_HINT,
+    _require_audio,
+    get_hostapi_names,
+    normalize_audio_device_name,
+)
+
+
+def _require_xtts() -> None:
+    """Raise a friendly error if the local XTTS stack (coqui-tts + torch) is absent."""
+    if TTS is None or torch is None:
+        raise RuntimeError(VOICE_EXTRAS_HINT)
 from .config import Config
 from .models import SessionState
 from .paths import AUDIO_DIR, ROOT_DIR, XTTS_STREAM_END
@@ -47,12 +72,14 @@ def resolve_optional_path(path_value: str | None) -> Path | None:
 
 
 def get_xtts_device(config: Config) -> str:
-    if config.xtts_use_gpu and torch.cuda.is_available():
+    if config.xtts_use_gpu and torch is not None and torch.cuda.is_available():
         return "cuda"
     return "cpu"
 
 
 def get_default_output_device_index() -> int | None:
+    if sd is None:
+        return None
     default_device = sd.default.device
     if isinstance(default_device, (list, tuple)):
         if len(default_device) < 2:
@@ -191,6 +218,8 @@ def choose_compatible_output_device_index(
 
 
 def list_output_devices_compact(max_devices: int = 24) -> list[dict[str, Any]]:
+    if sd is None:
+        return []
     try:
         devices = sd.query_devices()
     except Exception as exc:
@@ -488,7 +517,8 @@ def resample_audio_for_output(
     return np.ascontiguousarray(resampled, dtype=np.float32)
 
 
-def ensure_xtts_model(config: Config, state: SessionState) -> TTS:
+def ensure_xtts_model(config: Config, state: SessionState) -> "TTS":
+    _require_xtts()
     desired_device = get_xtts_device(config)
     if state.xtts_model is None or state.xtts_device != desired_device:
         model = TTS(config.xtts_model_name, progress_bar=False)
@@ -1090,10 +1120,12 @@ def play_audio_file(
     output_device_index: int | None = None,
     on_amplitude: Any = None,
 ) -> None:
-    if audio_path.suffix.lower() == ".wav":
+    if audio_path.suffix.lower() == ".wav" and sd is not None:
         play_wav_with_sounddevice(audio_path, output_device_index, on_amplitude)
         return
 
+    # No sounddevice/PortAudio (minimal install): fall back to a system player.
+    # ffplay handles WAV too, so this keeps playback working without the voice extras.
     if os.name == "nt":
         _play_with_mci(audio_path)
     else:

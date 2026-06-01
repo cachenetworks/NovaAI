@@ -129,6 +129,89 @@ set_env_value() {
     fi
 }
 
+# True when there's no graphical display (e.g. a headless Raspberry Pi over SSH).
+is_headless() {
+    [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]
+}
+
+# Detect the system package manager + a sudo prefix (so we can install system libs).
+detect_pkg_manager() {
+    PKG_MGR=""
+    PKG_INSTALL=""
+    if has_cmd apt-get; then
+        PKG_MGR="apt"; PKG_INSTALL="apt-get install -y"
+    elif has_cmd dnf; then
+        PKG_MGR="dnf"; PKG_INSTALL="dnf install -y"
+    elif has_cmd pacman; then
+        PKG_MGR="pacman"; PKG_INSTALL="pacman -S --noconfirm"
+    fi
+    SUDO=""
+    if [[ "$(id -u)" != "0" ]] && has_cmd sudo; then SUDO="sudo"; fi
+}
+
+# Install the system libraries the chosen profile needs (best-effort, non-fatal).
+install_system_deps() {
+    detect_pkg_manager
+    if [[ -z "$PKG_MGR" ]]; then
+        warn "No known package manager (apt/dnf/pacman). Install system deps manually if needed:"
+        info "  ffmpeg (audio), libportaudio2 (mic, voice profile), WebKitGTK (desktop GUI)."
+        return
+    fi
+
+    # Map generic deps to per-distro package names.
+    local pkgs=()
+    case "$PKG_MGR" in
+        apt)
+            pkgs+=("ffmpeg")
+            [[ "$NEED_VOICE" == "true" ]] && pkgs+=("libportaudio2" "portaudio19-dev")
+            [[ "$NEED_GUI" == "true" ]] && pkgs+=("gir1.2-webkit2-4.1" "python3-gi" "gir1.2-gtk-3.0")
+            ;;
+        dnf)
+            pkgs+=("ffmpeg")
+            [[ "$NEED_VOICE" == "true" ]] && pkgs+=("portaudio" "portaudio-devel")
+            [[ "$NEED_GUI" == "true" ]] && pkgs+=("webkit2gtk4.1" "python3-gobject" "gtk3")
+            ;;
+        pacman)
+            pkgs+=("ffmpeg")
+            [[ "$NEED_VOICE" == "true" ]] && pkgs+=("portaudio")
+            [[ "$NEED_GUI" == "true" ]] && pkgs+=("webkit2gtk" "python-gobject" "gtk3")
+            ;;
+    esac
+
+    info "Installing system packages: ${pkgs[*]}"
+    if ! $SUDO $PKG_INSTALL "${pkgs[@]}"; then
+        warn "Some system packages failed to install. NovaAI may still work; install them manually if a feature is missing."
+    else
+        ok "System packages installed."
+    fi
+}
+
+# Ask which feature profile to install. Sets INSTALL_PROFILE / NEED_VOICE / NEED_GUI.
+choose_install_profile() {
+    local arch; arch="$(uname -m)"
+    local default_hint="Minimal recommended for Raspberry Pi / headless servers."
+    [[ "$arch" == "aarch64" || "$arch" == "arm"* ]] && default_hint="Detected ARM ($arch) — Minimal is recommended."
+
+    info "$default_hint"
+    local choice
+    choice=$(ask_choice "Which feature set do you want to install?" \
+        "Minimal       — text chat + browser web UI (smallest, recommended for Pi)" \
+        "+ Voice       — also speech in/out, XTTS, embeddings (large; needs mic/speakers)" \
+        "+ Desktop GUI — also the native pywebview window (needs a display)" \
+        "Everything    — voice + desktop GUI")
+
+    NEED_VOICE=false
+    NEED_GUI=false
+    case "$choice" in
+        1) INSTALL_PROFILE="minimal" ;;
+        2) INSTALL_PROFILE="voice"; NEED_VOICE=true ;;
+        3) INSTALL_PROFILE="gui";   NEED_GUI=true ;;
+        4) INSTALL_PROFILE="full";  NEED_VOICE=true; NEED_GUI=true ;;
+        *) INSTALL_PROFILE="minimal" ;;
+    esac
+    ok "Install profile: $INSTALL_PROFILE"
+}
+
 # ── Step 1: Python ───────────────────────────────────────────────────────────
 
 ensure_python() {
@@ -335,6 +418,10 @@ run_setup() {
     echo ""
 
     local python_cmd="$1"
+
+    # System libraries the chosen profile needs (ffmpeg, PortAudio, WebKitGTK).
+    install_system_deps
+
     local env_file="$INSTALL_DIR/.env"
     if [[ ! -f "$env_file" && -f "$INSTALL_DIR/.env.example" ]]; then
         cp "$INSTALL_DIR/.env.example" "$env_file"
@@ -364,7 +451,8 @@ run_setup() {
         ok "LLM provider configured."
     fi
 
-    (cd "$INSTALL_DIR" && "$python_cmd" setup.py --setup)
+    # Tell setup.py which dependency profile to install (minimal/voice/gui/full).
+    (cd "$INSTALL_DIR" && NOVA_INSTALL_PROFILE="${INSTALL_PROFILE:-full}" "$python_cmd" setup.py --setup)
     ok "Setup complete."
 }
 
@@ -417,6 +505,18 @@ start_ollama_and_pull() {
 ask_gpu() {
     step "6/7" "GPU acceleration..."
 
+    # Torch is only installed with the voice/full profiles, so CUDA torch is
+    # irrelevant otherwise (and Raspberry Pi has no NVIDIA GPU at all).
+    if [[ "$NEED_VOICE" != "true" ]]; then
+        ok "Skipped (no voice/ML stack in this profile — nothing to accelerate)."
+        return
+    fi
+    local arch; arch="$(uname -m)"
+    if [[ "$arch" == "aarch64" || "$arch" == "arm"* ]]; then
+        ok "Skipped (ARM device — no CUDA GPU). Voice runs on CPU."
+        return
+    fi
+
     local choice
     choice=$(ask_choice "Do you have an NVIDIA GPU for faster voice synthesis?" \
         "Yes — install CUDA-accelerated PyTorch" \
@@ -468,6 +568,12 @@ ask_gpu() {
 
 ask_launcher() {
     step "7/7" "Desktop launcher..."
+
+    # A .desktop launcher only makes sense for the native GUI on a machine with a display.
+    if [[ "$NEED_GUI" != "true" ]] || is_headless; then
+        ok "Skipped (headless / no desktop GUI). Start NovaAI with: python3 app.py --web"
+        return
+    fi
 
     if ask_yes_no "Create a desktop launcher for NovaAI?"; then
         local desktop_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
@@ -527,10 +633,18 @@ show_finish() {
     fi
     echo -e "    ${DIM}LLM:${NC}          ${WHITE}$provider_label${NC}"
     echo ""
+    echo -e "    ${DIM}Profile:${NC}      ${WHITE}${INSTALL_PROFILE:-full}${NC}"
+    echo ""
     echo -e "    ${DIM}To launch NovaAI anytime:${NC}"
     echo ""
     echo -e "      ${CYAN}cd $INSTALL_DIR${NC}"
-    echo -e "      ${CYAN}python3 setup.py${NC}"
+    if is_headless || [[ "$NEED_GUI" != "true" ]]; then
+        echo -e "      ${CYAN}python3 app.py --web${NC}   ${DIM}# then open the printed http://...:8800 URL in a browser${NC}"
+        echo -e "      ${CYAN}python3 app.py${NC}         ${DIM}# or chat in this terminal${NC}"
+    else
+        echo -e "      ${CYAN}python3 setup.py${NC}       ${DIM}# desktop GUI${NC}"
+        echo -e "      ${CYAN}python3 app.py --web${NC}   ${DIM}# or the browser web UI${NC}"
+    fi
     echo ""
     echo -e "    ${DIM}Change LLM provider anytime by editing${NC} ${WHITE}.env${NC} ${DIM}in the install folder.${NC}"
     echo ""
@@ -547,6 +661,9 @@ main() {
 
     # Step 2: LLM provider
     choose_llm_provider
+
+    # Feature profile (minimal / voice / gui / full) — drives deps + system libs.
+    choose_install_profile
 
     # Step 3: Ollama
     ensure_ollama
@@ -574,7 +691,12 @@ main() {
         echo ""
         info "Starting NovaAI..."
         local venv_python="$INSTALL_DIR/.venv/bin/python"
-        (cd "$INSTALL_DIR" && "$venv_python" app.py --gui)
+        # Headless / no-GUI profile -> browser web UI; otherwise the native window.
+        if is_headless || [[ "$NEED_GUI" != "true" ]]; then
+            (cd "$INSTALL_DIR" && "$venv_python" app.py --web)
+        else
+            (cd "$INSTALL_DIR" && "$venv_python" app.py --gui)
+        fi
     fi
 }
 
