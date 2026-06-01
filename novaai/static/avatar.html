@@ -124,6 +124,24 @@
         grid-template-columns: 1fr;
       }
     }
+
+    /* OBS overlay mode (?transparent=1): show ONLY the avatar — no header,
+       panels, upload zone, badges, or log. The canvas fills the viewport so
+       it drops straight into a Browser Source. */
+    body.obs-mode { background: transparent !important; overflow: hidden; }
+    body.obs-mode header,
+    body.obs-mode .panel:not(:has(#viewer)),
+    body.obs-mode .panel > div,
+    body.obs-mode .side-section,
+    body.obs-mode #dropZone,
+    body.obs-mode #log { display: none !important; }
+    body.obs-mode main { grid-template-columns: 1fr; gap: 0; padding: 0; }
+    body.obs-mode .panel { background: transparent !important; border: none !important; padding: 0 !important; gap: 0 !important; }
+    body.obs-mode #viewer {
+      background: transparent !important;
+      border-radius: 0;
+      width: 100vw; height: 100vh; min-height: 100vh;
+    }
   </style>
 </head>
 <body>
@@ -195,8 +213,9 @@
   const IDLE_ENABLED = !QUERY.has('noidle');
   renderer.setClearColor(0x07131d, TRANSPARENT ? 0 : 1);
   if (TRANSPARENT) {
-    document.body.style.background = 'transparent';
-    document.querySelectorAll('header, .panel:not(:has(#viewer))').forEach(el => el.style.display = 'none');
+    // Hide all UI chrome — only the avatar canvas shows (see body.obs-mode CSS).
+    document.body.classList.add('obs-mode');
+    requestAnimationFrame(resize);  // canvas is now full-viewport; re-fit
   }
 
   const light = new THREE.HemisphereLight(0xffffff, 0x222222, 1);
