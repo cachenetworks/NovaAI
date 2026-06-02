@@ -571,6 +571,42 @@
   // Expressions MMD may drive — reset each frame so morphs never get stuck on.
   const MMD_RESET_EXPR = ['blink','blinkRight','aa','ih','ou','ee','oh','happy','angry','sad','neutral'];
 
+  // Leg IK: MMD dances drive the legs through foot-IK target bones (足ＩＫ), not
+  // direct leg rotations, so we solve a 2-bone IK so the ankle reaches the
+  // (position-animated) IK target. Disable with ?ik=0 to fall back to raw FK.
+  const MMD_USE_IK = ((QUERY && QUERY.get('ik')) || '1') !== '0';
+  const MMD_IK = {
+    left:  { ik: '左足ＩＫ', toe: '左つま先ＩＫ', upper: 'leftUpperLeg', lower: 'leftLowerLeg', foot: 'leftFoot' },
+    right: { ik: '右足ＩＫ', toe: '右つま先ＩＫ', upper: 'rightUpperLeg', lower: 'rightLowerLeg', foot: 'rightFoot' },
+  };
+
+  // Analytic 2-bone IK: given joint A (hip), target T (ankle), bone lengths
+  // L1/L2 and a pole direction (which way the knee bends), return the knee point.
+  function _solveTwoBone(A, T, L1, L2, pole) {
+    const toT = T.clone().sub(A);
+    let d = toT.length();
+    d = Math.max(Math.abs(L1 - L2) + 1e-4, Math.min(d, L1 + L2 - 1e-4));
+    const dir = toT.clone().normalize();
+    const a = (d * d + L1 * L1 - L2 * L2) / (2 * d);
+    const h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+    // Bend axis = component of the pole perpendicular to the leg line.
+    let bend = pole.clone().sub(dir.clone().multiplyScalar(pole.dot(dir)));
+    if (bend.lengthSq() < 1e-6) bend.set(0, 0, 1).sub(dir.clone().multiplyScalar(dir.z));
+    bend.normalize();
+    return A.clone().add(dir.multiplyScalar(a)).add(bend.multiplyScalar(h));
+  }
+
+  // Point a bone from `fromW` toward `toW` (world positions). restDirLocal is the
+  // bone's rest direction in its PARENT's local frame (legs rest pointing -Y).
+  const _DOWN = new THREE.Vector3(0, -1, 0);
+  function _aimBone(node, fromW, toW, restDirLocal) {
+    if (!node.parent) return;
+    const pq = node.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+    const desired = toW.clone().sub(fromW).normalize().applyQuaternion(pq);
+    if (desired.lengthSq() < 1e-8) return;
+    node.quaternion.setFromUnitVectors(restDirLocal, desired);
+  }
+
   // Optional arm rest-pose correction. With the torso retarget in place, the raw
   // VMD already poses the arms correctly on most VRMs, so this defaults to OFF.
   // If a model's arms sit too high (stuck near a T-pose), nudge them down with
@@ -658,6 +694,33 @@
       };
       const hipsBase = torso.hips ? torso.hips.position.clone() : null;
 
+      // Capture leg rest geometry (in world space) for IK: the ankle target is
+      // the rest ankle + the animated IK offset, and the feet stay planted while
+      // the hips move. Reset to rest pose first so the capture is clean.
+      let ik = null;
+      if (MMD_USE_IK && hb) {
+        applyRestPoseImmediate();
+        currentVrm.scene.updateMatrixWorld(true);
+        ik = { sceneQuat: currentVrm.scene.getWorldQuaternion(new THREE.Quaternion()) };
+        for (const side of ['left', 'right']) {
+          const cfg = MMD_IK[side];
+          if (!tracks[cfg.ik]) continue;   // dance doesn't use IK for this leg
+          const up = hb.getNormalizedBoneNode(cfg.upper);
+          const lo = hb.getNormalizedBoneNode(cfg.lower);
+          const ft = hb.getNormalizedBoneNode(cfg.foot);
+          if (!up || !lo || !ft) continue;
+          const hip = up.getWorldPosition(new THREE.Vector3());
+          const knee = lo.getWorldPosition(new THREE.Vector3());
+          const ankle = ft.getWorldPosition(new THREE.Vector3());
+          ik[side] = {
+            up, lo, ft,
+            ankleRest: ankle.clone(),
+            L1: hip.distanceTo(knee),
+            L2: knee.distanceTo(ankle),
+          };
+        }
+      }
+
       // Morphs -> per-expression sorted keyframes.
       const morphs = new Map();
       const mg = {};
@@ -694,8 +757,9 @@
         tryPlayMmdAudio();
       }
 
-      mmd = { tracks, simple, torso, hipsBase, morphs, camKeys, duration: maxT || 1, start: clock.elapsedTime, loop: !!payload.loop };
-      logMessage(`MMD: playing (${simple.length} bones + torso, ${morphs.size} morphs, ${camKeys.length} cam keys, ${maxT.toFixed(1)}s)`);
+      mmd = { tracks, simple, torso, hipsBase, ik, morphs, camKeys, duration: maxT || 1, start: clock.elapsedTime, loop: !!payload.loop };
+      const ikLegs = ik ? ['left', 'right'].filter((s) => ik[s]).length : 0;
+      logMessage(`MMD: playing (${simple.length} bones + torso, ${ikLegs} IK legs, ${morphs.size} morphs, ${camKeys.length} cam keys, ${maxT.toFixed(1)}s)`);
       setModelStatus('Dancing (MMD)');
     } catch (e) {
       logMessage(`MMD load failed: ${e.message || e}`);
@@ -793,6 +857,28 @@
     }
     if (T.spine) T.spine.quaternion.copy(low).invert().multiply(up);
     if (T.chest) T.chest.quaternion.copy(up2 || I);
+
+    // Leg IK: solve after the FK + torso so the hips are in their final place.
+    // The ankle target = rest ankle + the animated IK offset (feet stay planted
+    // while the hips move). Knee bends forward (pole = world forward).
+    if (mmd.ik) {
+      currentVrm.scene.updateMatrixWorld(true);
+      const pole = new THREE.Vector3(0, 0, 1).applyQuaternion(mmd.ik.sceneQuat);
+      for (const side of ['left', 'right']) {
+        const leg = mmd.ik[side];
+        if (!leg) continue;
+        const off = sampP([MMD_IK[side].ik]);
+        if (!off) continue;
+        const target = leg.ankleRest.clone().add(off.clone().applyQuaternion(mmd.ik.sceneQuat));
+        const A = leg.up.getWorldPosition(new THREE.Vector3());
+        const B = _solveTwoBone(A, target, leg.L1, leg.L2, pole);
+        _aimBone(leg.up, A, B, _DOWN);
+        leg.up.updateWorldMatrix(true, false);
+        const Bw = leg.lo.getWorldPosition(new THREE.Vector3());
+        _aimBone(leg.lo, Bw, target, _DOWN);
+      }
+    }
+
     // Morphs (reset known channels first so nothing sticks).
     const em = currentVrm.expressionManager;
     if (em) {
