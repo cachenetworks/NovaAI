@@ -185,7 +185,9 @@ Play **MMD (`.vmd`) dance motions on your VRM avatar** — with optional audio a
 - Pick motion + audio + camera, hit **Play Dance** (with optional **Loop**) and it retargets the MMD motion onto the VRM humanoid, syncs the audio, and (if provided) drives the camera. **Stop** returns to idle.
 - Works in the OBS overlay too (`?transparent=1`).
 
-> ⚙️ MMD→VRM retargeting is best-effort: MMD's standard (Japanese) bone & morph names are mapped onto the VRM humanoid with a single handedness flip. Most dances look right; if one comes out mirrored front-to-back, flip `MMD_FLIP` in `static/avatar.html`. Camera support is approximate.
+> ⚙️ MMD→VRM retargeting is best-effort (unlike native MMD players such as [web-mmd](https://github.com/culdo/web-mmd), which drive real PMX rigs). The torso/upper body, head, and hands track well. Open the **non-transparent** overlay (`http://<host>:8766/`) to get a live **MMD body tuning** panel — flip the facing/axis (0–3), knee bend, leg-IK, and arm-down amount and watch the dance fix itself; the choice saves automatically.
+
+> 🐞 **Known bug — leg tracking (MMD on VRM):** the **legs don't track reliably yet**. MMD dances move the legs through foot **IK target** bones (足ＩＫ) rather than direct leg rotations, and reproducing that on a VRM skeleton (whose leg rig/rest pose differs from MMD) still needs work — the correct source/approach for the leg solve is unresolved. **Body, torso, head, arms and hands are trackable**; legs/feet may look stiff, slide, or bend oddly. Toggle **Leg IK off** in the tuning panel to fall back to raw leg motion. Help/PRs welcome (see [SystemAnimatorOnline](https://github.com/ButzYung/SystemAnimatorOnline) for a reference VMD-on-VRM implementation).
 
 ### 🎮 Game Playing
 
@@ -733,6 +735,7 @@ Then open `http://<pi-ip>:8800` in any browser on your network. Prefer the termi
 
 ### 🗺️ Roadmap
 
+- [ ] **Fix MMD leg tracking on VRM** (foot-IK retarget) — body/arms/hands already track; legs are the open problem
 - [ ] systemd service / auto-start on boot for the web UI
 - [ ] Test on more distros (Fedora, Arch, NixOS)
 - [ ] macOS support
