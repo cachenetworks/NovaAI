@@ -1223,71 +1223,120 @@ class Api:
         self._save_earnings_store(data)
         return {"ok": True, **self.get_earnings()}
 
-    # ── MMD dances (play .vmd motion + audio + optional camera on the avatar) ──────
+    # ── MMD dances ────────────────────────────────────────────────────────────────
+    # Each dance is ONE bundle (a "set"): a .vmd motion + optional song + optional
+    # .vmd camera, stored together under data/mmd/sets/<id>/ and listed as one row.
 
-    _MMD_KINDS = ("motion", "audio", "camera")
+    _MMD_SETS_DIR = MMD_DIR / "sets"
+    _MMD_AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".m4a"}
 
     @staticmethod
-    def _mmd_safe_name(filename: str) -> str:
+    def _mmd_safe_id(value: str) -> str:
         import re
-        base = Path(str(filename or "")).name
-        safe = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._")
-        return safe or "file"
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(value or "")).strip("._")
+        return safe or "dance"
 
-    def upload_mmd(self, kind: str, filename: str, data_b64: str) -> dict[str, Any]:
-        """Save an uploaded MMD asset (base64) under data/mmd/<kind>/."""
+    def _mmd_dedupe_id(self, base: str) -> str:
+        sid = base
+        n = 2
+        while (self._MMD_SETS_DIR / sid).exists():
+            sid = f"{base}-{n}"
+            n += 1
+        return sid
+
+    def _mmd_set_files(self, set_dir: Path) -> dict[str, str]:
+        """Return {motion, song, camera} filenames present in a set folder."""
+        files = {"motion": "", "song": "", "camera": ""}
+        if (set_dir / "motion.vmd").is_file():
+            files["motion"] = "motion.vmd"
+        if (set_dir / "camera.vmd").is_file():
+            files["camera"] = "camera.vmd"
+        for p in set_dir.glob("song.*"):
+            if p.suffix.lower() in self._MMD_AUDIO_EXTS:
+                files["song"] = p.name
+                break
+        return files
+
+    def create_mmd_set(self, name: str) -> dict[str, Any]:
+        """Create an empty dance set; files are uploaded into it next."""
+        display = str(name or "").strip() or "Dance"
+        sid = self._mmd_dedupe_id(self._mmd_safe_id(display))
+        set_dir = self._MMD_SETS_DIR / sid
+        set_dir.mkdir(parents=True, exist_ok=True)
+        (set_dir / "meta.json").write_text(json.dumps({"name": display}), encoding="utf-8")
+        return {"ok": True, "id": sid}
+
+    def upload_mmd_file(self, set_id: str, kind: str, filename: str, data_b64: str) -> dict[str, Any]:
+        """Add a motion/song/camera file to an existing dance set."""
         kind = str(kind).lower()
-        if kind not in self._MMD_KINDS:
-            return {"ok": False, "msg": f"Unknown MMD kind: {kind}"}
-        name = self._mmd_safe_name(filename)
-        # Validate extension per kind so motion/camera are .vmd, audio is audio.
-        ext = Path(name).suffix.lower()
+        if kind not in {"motion", "song", "camera"}:
+            return {"ok": False, "msg": f"Unknown kind: {kind}"}
+        set_dir = self._MMD_SETS_DIR / self._mmd_safe_id(set_id)
+        if not set_dir.is_dir():
+            return {"ok": False, "msg": "Dance set not found."}
+        ext = Path(str(filename)).suffix.lower()
         if kind in {"motion", "camera"} and ext != ".vmd":
             return {"ok": False, "msg": f"{kind} must be a .vmd file."}
-        if kind == "audio" and ext not in {".mp3", ".wav", ".ogg", ".m4a"}:
-            return {"ok": False, "msg": "audio must be .mp3/.wav/.ogg/.m4a."}
+        if kind == "song" and ext not in self._MMD_AUDIO_EXTS:
+            return {"ok": False, "msg": "song must be .mp3/.wav/.ogg/.m4a."}
         try:
             raw = base64.b64decode((data_b64 or "").split(",")[-1])
         except Exception:
             return {"ok": False, "msg": "Invalid file data."}
         if not raw:
             return {"ok": False, "msg": "Empty file."}
-        dest_dir = MMD_DIR / kind
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        (dest_dir / name).write_bytes(raw)
-        return {"ok": True, "name": name}
+        target = set_dir / ("motion.vmd" if kind == "motion"
+                            else "camera.vmd" if kind == "camera"
+                            else f"song{ext}")
+        target.write_bytes(raw)
+        return {"ok": True}
 
-    def list_mmd(self) -> dict[str, Any]:
-        out: dict[str, list[str]] = {k: [] for k in self._MMD_KINDS}
-        for kind in self._MMD_KINDS:
-            d = MMD_DIR / kind
-            if d.is_dir():
-                out[kind] = sorted(p.name for p in d.iterdir() if p.is_file())
-        return out
+    def list_mmd_sets(self) -> list[dict[str, Any]]:
+        sets: list[dict[str, Any]] = []
+        if self._MMD_SETS_DIR.is_dir():
+            for set_dir in sorted(self._MMD_SETS_DIR.iterdir()):
+                if not set_dir.is_dir():
+                    continue
+                name = set_dir.name
+                try:
+                    meta = json.loads((set_dir / "meta.json").read_text(encoding="utf-8"))
+                    name = str(meta.get("name", name))
+                except Exception:
+                    pass
+                files = self._mmd_set_files(set_dir)
+                sets.append({
+                    "id": set_dir.name,
+                    "name": name,
+                    "has_motion": bool(files["motion"]),
+                    "has_song": bool(files["song"]),
+                    "has_camera": bool(files["camera"]),
+                })
+        return sets
 
-    def delete_mmd(self, kind: str, name: str) -> dict[str, Any]:
-        kind = str(kind).lower()
-        if kind not in self._MMD_KINDS:
-            return {"ok": False, "msg": "Unknown kind."}
-        target = MMD_DIR / kind / Path(str(name)).name
+    def delete_mmd_set(self, set_id: str) -> dict[str, Any]:
+        import shutil
+        set_dir = self._MMD_SETS_DIR / self._mmd_safe_id(set_id)
         try:
-            if target.is_file():
-                target.unlink()
+            if set_dir.is_dir():
+                shutil.rmtree(set_dir)
             return {"ok": True}
         except Exception as exc:
             return {"ok": False, "msg": str(exc)}
 
-    def play_mmd(self, motion: str, audio: str = "", camera: str = "", loop: bool = False) -> dict[str, Any]:
-        """Trigger an MMD dance on the avatar overlay."""
+    def play_mmd_set(self, set_id: str, loop: bool = False) -> dict[str, Any]:
+        """Play a whole dance set (motion + its song + its camera) on the avatar."""
         if self.avatar is None:
             return {"ok": False, "msg": "Start the avatar first."}
-        if not motion:
-            return {"ok": False, "msg": "Pick a motion (.vmd) file."}
-        def _url(kind: str, name: str) -> str:
-            return f"/mmd/{kind}/{Path(str(name)).name}" if name else ""
+        sid = self._mmd_safe_id(set_id)
+        set_dir = self._MMD_SETS_DIR / sid
+        files = self._mmd_set_files(set_dir)
+        if not files["motion"]:
+            return {"ok": False, "msg": "This dance has no motion (.vmd)."}
+        def _url(fname: str) -> str:
+            return f"/mmd/sets/{sid}/{fname}" if fname else ""
         try:
             self.avatar.publish_mmd(
-                _url("motion", motion), _url("audio", audio), _url("camera", camera), bool(loop)
+                _url(files["motion"]), _url(files["song"]), _url(files["camera"]), bool(loop)
             )
             return {"ok": True}
         except Exception as exc:

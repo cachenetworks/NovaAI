@@ -95,16 +95,20 @@ class AvatarHttpRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/mmd/"):
-            # /mmd/<kind>/<name> — kind is motion|audio|camera. Serve from the
-            # MMD dir, stripping any path parts to block directory traversal.
+            # Audio needs a real media MIME type or the browser won't play it.
+            audio_types = {
+                ".mp3": "audio/mpeg", ".wav": "audio/wav",
+                ".ogg": "audio/ogg", ".m4a": "audio/mp4",
+            }
             parts = [p for p in unquote(path[len("/mmd/") :]).split("/") if p]
-            if len(parts) == 2 and parts[0] in {"motion", "audio", "camera"}:
+            local_path = None
+            # /mmd/sets/<id>/<file> — a bundled dance (motion + song + camera).
+            if len(parts) == 3 and parts[0] == "sets":
+                local_path = MMD_DIR / "sets" / Path(parts[1]).name / Path(parts[2]).name
+            # /mmd/<kind>/<name> — legacy loose files.
+            elif len(parts) == 2 and parts[0] in {"motion", "audio", "camera"}:
                 local_path = MMD_DIR / parts[0] / Path(parts[1]).name
-                # Audio needs a real media MIME type or the browser won't play it.
-                audio_types = {
-                    ".mp3": "audio/mpeg", ".wav": "audio/wav",
-                    ".ogg": "audio/ogg", ".m4a": "audio/mp4",
-                }
+            if local_path is not None:
                 ctype = audio_types.get(local_path.suffix.lower(), "application/octet-stream")
                 self._serve_file(local_path, content_type=ctype)
                 return

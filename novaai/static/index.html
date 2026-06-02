@@ -370,39 +370,38 @@ tailwind.config = {
       <!-- ═══════════════════════════════════════════════════════════════ -->
       <div id="page-mmd" class="page flex-col h-full overflow-y-auto p-6 gap-5">
         <div class="card p-5">
-          <div class="flex items-center justify-between mb-3">
-            <div class="text-[13px] font-bold">MMD Dances</div>
-            <button onclick="loadMmd()" class="btn-secondary px-3 py-1 rounded text-[11px]">Refresh</button>
-          </div>
-          <div class="text-[11px] text-nova-muted mb-3">Upload <b>.vmd</b> motions, songs (.mp3/.wav/.ogg/.m4a) and optional <b>.vmd</b> cameras. Pick a song + camera below, then hit <b>Play</b> on a motion to dance it on the avatar.</div>
-          <div class="flex flex-wrap gap-2 mb-3">
-            <button onclick="pickMmd('motion')" class="btn-primary px-3 py-2 rounded text-[12px] font-semibold">⬆ Upload Motion (.vmd)</button>
-            <button onclick="pickMmd('audio')" class="btn-primary px-3 py-2 rounded text-[12px] font-semibold">⬆ Upload Song</button>
-            <button onclick="pickMmd('camera')" class="btn-primary px-3 py-2 rounded text-[12px] font-semibold">⬆ Upload Camera (.vmd)</button>
+          <div class="text-[13px] font-bold mb-3">Add a Dance</div>
+          <div class="text-[11px] text-nova-muted mb-3">A dance is one bundle: a <b>.vmd</b> motion (required) + an optional song (.mp3/.wav/.ogg/.m4a) + an optional <b>.vmd</b> camera — uploaded together as one row.</div>
+          <div class="flex flex-col gap-2 mb-3 max-w-[560px]">
+            <input id="mmd-name" type="text" placeholder="Dance name…" class="w-full" />
+            <div class="flex items-center gap-2 text-[12px]">
+              <button onclick="pickMmd('motion')" class="btn-secondary px-3 py-1.5 rounded w-[150px] text-left">🎬 Motion (.vmd)</button>
+              <span id="mmd-pick-motion" class="text-nova-muted truncate flex-1">required</span>
+            </div>
+            <div class="flex items-center gap-2 text-[12px]">
+              <button onclick="pickMmd('song')" class="btn-secondary px-3 py-1.5 rounded w-[150px] text-left">🎵 Song</button>
+              <span id="mmd-pick-song" class="text-nova-muted truncate flex-1">optional</span>
+            </div>
+            <div class="flex items-center gap-2 text-[12px]">
+              <button onclick="pickMmd('camera')" class="btn-secondary px-3 py-1.5 rounded w-[150px] text-left">🎥 Camera (.vmd)</button>
+              <span id="mmd-pick-camera" class="text-nova-muted truncate flex-1">optional</span>
+            </div>
           </div>
           <input id="mmd-file-input" type="file" class="hidden" onchange="onMmdFileChosen(event)" />
-          <div class="flex flex-wrap items-center gap-3 text-[12px]">
-            <label class="flex items-center gap-2">🎵 Song <select id="mmd-audio" class="min-w-[140px]"></select></label>
-            <label class="flex items-center gap-2">🎥 Camera <select id="mmd-camera" class="min-w-[140px]"></select></label>
-            <label class="flex items-center gap-2"><input type="checkbox" id="mmd-loop" class="w-4 h-4 rounded accent-violet-500" /> Loop</label>
-            <button onclick="doStopMmd()" class="btn-danger px-4 py-1.5 rounded text-[12px]">⏹ Stop</button>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="doAddDance()" class="btn-primary px-4 py-2 rounded text-[12px] font-semibold">Add Dance</button>
+            <button onclick="doStopMmd()" class="btn-danger px-4 py-2 rounded text-[12px]">⏹ Stop</button>
+            <label class="flex items-center gap-2 text-[12px] ml-2"><input type="checkbox" id="mmd-loop" class="w-4 h-4 rounded accent-violet-500" /> Loop on play</label>
           </div>
           <div id="mmd-status" class="text-[11px] text-nova-muted mt-2"></div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <div class="card p-5">
-            <div class="text-[13px] font-bold mb-3">💃 Motions</div>
-            <div id="mmd-list-motion" class="space-y-2 text-[12px]"><span class="text-nova-muted">None yet.</span></div>
+        <div class="card p-5 flex-1">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-[13px] font-bold">Your Dances</div>
+            <button onclick="loadMmd()" class="btn-secondary px-3 py-1 rounded text-[11px]">Refresh</button>
           </div>
-          <div class="card p-5">
-            <div class="text-[13px] font-bold mb-3">🎵 Songs</div>
-            <div id="mmd-list-audio" class="space-y-2 text-[12px]"><span class="text-nova-muted">None yet.</span></div>
-          </div>
-          <div class="card p-5">
-            <div class="text-[13px] font-bold mb-3">🎥 Cameras</div>
-            <div id="mmd-list-camera" class="space-y-2 text-[12px]"><span class="text-nova-muted">None yet.</span></div>
-          </div>
+          <div id="mmd-list" class="space-y-2 text-[12px]"><span class="text-nova-muted">No dances yet.</span></div>
         </div>
       </div>
 
@@ -1162,77 +1161,87 @@ async function loadAvatar() {
 }
 
 // ── MMD dances ─────────────────────────────────────────────────────────────
-let _mmdPickKind = 'motion';
+// Files chosen for the dance currently being assembled (before "Add Dance").
+const _mmdPending = { motion: null, song: null, camera: null };
 function pickMmd(kind) {
-  _mmdPickKind = kind;
   const inp = $('mmd-file-input');
-  inp.accept = kind === 'audio' ? '.mp3,.wav,.ogg,.m4a,audio/*' : '.vmd';
+  inp.dataset.kind = kind;
+  inp.accept = kind === 'song' ? '.mp3,.wav,.ogg,.m4a,audio/*' : '.vmd';
   inp.value = '';
   inp.click();
 }
-async function onMmdFileChosen(event) {
+function onMmdFileChosen(event) {
   const file = event.target.files && event.target.files[0];
+  const kind = event.target.dataset.kind || 'motion';
   if (!file) return;
-  $('mmd-status').textContent = `Uploading ${file.name}…`;
+  _mmdPending[kind] = file;
+  const span = $('mmd-pick-' + kind);
+  if (span) { span.textContent = file.name; span.classList.remove('text-nova-muted'); span.classList.add('text-nova-text'); }
+}
+function _readFileB64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result));
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+async function doAddDance() {
+  const name = ($('mmd-name').value || '').trim();
+  if (!_mmdPending.motion) { showNotification('Pick a .vmd motion first.'); return; }
+  $('mmd-status').textContent = 'Uploading dance…';
   try {
-    const b64 = await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(String(r.result));
-      r.onerror = rej;
-      r.readAsDataURL(file);
-    });
-    const r = await api().upload_mmd(_mmdPickKind, file.name, b64);
-    if (!r || !r.ok) { showNotification((r && r.msg) || 'Upload failed.'); $('mmd-status').textContent=''; return; }
-    $('mmd-status').textContent = `Uploaded ${r.name}`;
+    const created = await api().create_mmd_set(name || _mmdPending.motion.name.replace(/\.vmd$/i, ''));
+    if (!created || !created.ok) { showNotification((created && created.msg) || 'Failed.'); $('mmd-status').textContent=''; return; }
+    const id = created.id;
+    for (const kind of ['motion', 'song', 'camera']) {
+      const f = _mmdPending[kind];
+      if (!f) continue;
+      const b64 = await _readFileB64(f);
+      const up = await api().upload_mmd_file(id, kind, f.name, b64);
+      if (!up || !up.ok) { showNotification(`${kind}: ${(up && up.msg) || 'upload failed'}`); }
+    }
+    // reset the form
+    _mmdPending.motion = _mmdPending.song = _mmdPending.camera = null;
+    $('mmd-name').value = '';
+    ['motion','song','camera'].forEach(k => { const s=$('mmd-pick-'+k); if(s){ s.textContent = k==='motion'?'required':'optional'; s.classList.add('text-nova-muted'); s.classList.remove('text-nova-text'); } });
+    $('mmd-status').textContent = 'Dance added.';
     loadMmd();
   } catch(e) { console.error(e); showNotification('Upload failed.'); $('mmd-status').textContent=''; }
 }
-function _fillMmdSelect(id, items, label) {
-  const sel = $(id); if (!sel) return;
-  const prev = sel.value;
-  const opts = [`<option value="">(no ${label})</option>`]
-    .concat((items||[]).map(n => `<option value="${escAttr(n)}">${escHtml(n)}</option>`));
-  sel.innerHTML = opts.join('');
-  if (prev) sel.value = prev;
-}
-function _renderMmdList(id, items, kind) {
-  const el = $(id); if (!el) return;
-  if (!items || !items.length) { el.innerHTML = '<span class="text-nova-muted">None yet.</span>'; return; }
-  el.innerHTML = items.map(n => {
-    const playBtn = kind === 'motion'
-      ? `<button onclick="doPlayMmdMotion('${escAttr(n)}')" class="btn-primary px-2 py-1 rounded text-[11px]">Play</button>` : '';
-    return `<div class="flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-nova-surface2 border border-nova-border">
-      <span class="truncate" title="${escAttr(n)}">${escHtml(n)}</span>
-      <span class="flex gap-2 shrink-0">${playBtn}
-        <button onclick="doDeleteMmd('${kind}','${escAttr(n)}')" class="btn-danger px-2 py-1 rounded text-[11px]">Delete</button>
-      </span>
-    </div>`;
-  }).join('');
+function _mmdBadge(on, label) {
+  return `<span class="px-1.5 py-0.5 rounded text-[10px] ${on ? 'bg-violet-500/25 text-violet-200' : 'bg-nova-surface text-nova-muted'}">${label}</span>`;
 }
 async function loadMmd() {
   try {
-    const m = await api().list_mmd();
-    _renderMmdList('mmd-list-motion', m.motion, 'motion');
-    _renderMmdList('mmd-list-audio',  m.audio,  'audio');
-    _renderMmdList('mmd-list-camera', m.camera, 'camera');
-    _fillMmdSelect('mmd-audio',  m.audio,  'song');
-    _fillMmdSelect('mmd-camera', m.camera, 'camera');
+    const sets = await api().list_mmd_sets();
+    const el = $('mmd-list');
+    if (!el) return;
+    if (!sets || !sets.length) { el.innerHTML = '<span class="text-nova-muted">No dances yet.</span>'; return; }
+    el.innerHTML = sets.map(s => `
+      <div class="flex items-center justify-between gap-3 py-2.5 px-3 rounded-lg bg-nova-surface2 border border-nova-border">
+        <div class="min-w-0">
+          <div class="font-medium text-nova-text truncate" title="${escAttr(s.name)}">${escHtml(s.name)}</div>
+          <div class="flex gap-1.5 mt-1">${_mmdBadge(s.has_motion,'🎬 motion')}${_mmdBadge(s.has_song,'🎵 song')}${_mmdBadge(s.has_camera,'🎥 camera')}</div>
+        </div>
+        <span class="flex gap-2 shrink-0">
+          <button onclick="doPlayDance('${escAttr(s.id)}')" class="btn-primary px-3 py-1 rounded text-[11px]">Play</button>
+          <button onclick="doDeleteDance('${escAttr(s.id)}','${escAttr(s.name)}')" class="btn-danger px-3 py-1 rounded text-[11px]">Delete</button>
+        </span>
+      </div>`).join('');
   } catch(e) { console.error(e); }
 }
-async function doPlayMmdMotion(motion) {
-  if (!motion) return;
-  const audio = ($('mmd-audio')||{}).value || '';
-  const camera = ($('mmd-camera')||{}).value || '';
+async function doPlayDance(id) {
   const loop = !!($('mmd-loop')||{}).checked;
   try {
-    const r = await api().play_mmd(motion, audio, camera, loop);
+    const r = await api().play_mmd_set(id, loop);
     if (r && !r.ok && r.msg) showNotification(r.msg);
-    else $('mmd-status').textContent = `Playing ${motion}${audio ? ' + ' + audio : ''}…`;
+    else $('mmd-status').textContent = 'Playing on the avatar…';
   } catch(e) { console.error(e); }
 }
-async function doDeleteMmd(kind, name) {
-  if (!confirm(`Delete ${name}?`)) return;
-  try { await api().delete_mmd(kind, name); loadMmd(); } catch(e) { console.error(e); }
+async function doDeleteDance(id, name) {
+  if (!confirm(`Delete dance "${name}"?`)) return;
+  try { await api().delete_mmd_set(id); loadMmd(); } catch(e) { console.error(e); }
 }
 async function doStopMmd() {
   try { await api().stop_mmd(); $('mmd-status').textContent = 'Stopped.'; } catch(e) { console.error(e); }

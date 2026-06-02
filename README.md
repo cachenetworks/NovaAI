@@ -120,7 +120,7 @@ NovaAI runs as a native desktop window powered by **pywebview + Tailwind CSS** �
 | ✅ **To-Do** | Task list with done/delete |
 | 💜 **Stream** | Connect Twitch chat, watch the live feed, set the reply mode + who can talk (everyone / subscribers / moderators) |
 | 🧍 **Avatar** | Upload a VRM, open the OBS window, test emotions, toggle lip-sync |
-| 💃 **MMD** | Upload `.vmd` motions / songs / cameras, list them, play on the avatar, delete |
+| 💃 **MMD** | Add dances (motion + song + camera bundled per row), play on the avatar, delete |
 | 🎮 **Game** | Pick a driver (Minecraft/universal/etc.), set a goal, watch the live view |
 | 🎤 **Sing** | Type a song, attach/auto-find a backing track, replay saved songs |
 | 👤 **Profiles** | Create, clone, switch, delete, or import/export personalities |
@@ -181,7 +181,7 @@ A real 3D avatar (three-vrm) that **lip-syncs to the voice**, changes expression
 
 Play **MMD (`.vmd`) dance motions on your VRM avatar** — with optional audio and an optional camera motion.
 
-- **Upload** from the dedicated **MMD** page (sidebar): `.vmd` **motions**, **songs** (`.mp3`/`.wav`/`.ogg`/`.m4a`), and `.vmd` **cameras** — each shown in its own list with **Play** (motions) and **Delete**. Files live in `data/mmd/`.
+- **Add a dance** from the dedicated **MMD** page (sidebar): each dance is one bundle — a `.vmd` **motion** (required) + an optional **song** (`.mp3`/`.wav`/`.ogg`/`.m4a`) + an optional `.vmd` **camera**, uploaded together and shown as a single row with **Play** and **Delete**. Saved under `data/mmd/sets/`.
 - Pick motion + audio + camera, hit **Play Dance** (with optional **Loop**) and it retargets the MMD motion onto the VRM humanoid, syncs the audio, and (if provided) drives the camera. **Stop** returns to idle.
 - Works in the OBS overlay too (`?transparent=1`).
 
