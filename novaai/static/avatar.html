@@ -146,6 +146,19 @@
 </head>
 <body>
 <button id="audioUnlock" style="display:none;position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9999;padding:10px 18px;border:none;border-radius:999px;background:#7c4dff;color:#fff;font-size:14px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.4)">🔊 Click to enable dance audio</button>
+<div id="mmdTune" style="display:none;position:fixed;top:12px;right:12px;z-index:9998;background:rgba(13,28,43,.95);border:1px solid #17324a;border-radius:12px;padding:12px 14px;font-size:12px;color:#d7e8ff;width:230px;box-shadow:0 6px 24px rgba(0,0,0,.45)">
+  <div style="font-weight:700;margin-bottom:8px">MMD body tuning</div>
+  <div style="margin-bottom:6px">Facing/axis: <span id="mt-axisval"></span></div>
+  <div id="mt-axis" style="display:flex;gap:4px;margin-bottom:8px"></div>
+  <div style="margin-bottom:6px">Knees: <span id="mt-kneeval"></span></div>
+  <div style="display:flex;gap:4px;margin-bottom:8px"><button data-knee="1" style="flex:1;padding:6px">Forward</button><button data-knee="-1" style="flex:1;padding:6px">Backward</button></div>
+  <div style="margin-bottom:6px">Leg IK: <span id="mt-ikval"></span></div>
+  <div style="display:flex;gap:4px;margin-bottom:8px"><button data-ik="1" style="flex:1;padding:6px">On</button><button data-ik="0" style="flex:1;padding:6px">Off</button></div>
+  <div style="margin-bottom:6px">Arms down: <span id="mt-armval"></span>°</div>
+  <div style="display:flex;gap:4px;margin-bottom:8px"><button id="mt-arm-dn" style="flex:1;padding:6px">− less</button><button id="mt-arm-up" style="flex:1;padding:6px">+ more</button></div>
+  <button id="mt-replay" style="width:100%;padding:8px;background:#7c4dff">Replay dance</button>
+  <div style="margin-top:8px;font-size:11px;color:#9bb1c7">Settings save automatically. Tell the dev these numbers once it looks right.</div>
+</div>
 <header>
   <div>
     <h1>NovaAI VRM Portal</h1>
@@ -531,11 +544,19 @@
   // mirrored front-to-back, flip MMD_FLIP.
   const MMD_FPS = 30;
   const MMD_POS_SCALE = 0.08;   // MMD units ≈ 12.5 per metre
-  // MMD (left-handed) → VRM (right-handed) conversion. The exact axis flip is
-  // model/convention dependent, so it's selectable: open the overlay with
-  // ?mmdaxis=0..3 (and ?armangle=35) to find the one that looks right, then tell
-  // me which number — I'll bake it as the default. 1 = chirality-preserving Z-flip.
-  const MMD_AXIS = parseInt((QUERY && QUERY.get('mmdaxis')) || '1', 10);
+
+  // Live-tunable retarget settings (axis flip, leg IK, arm-down amount, knee
+  // bend direction). Defaults come from localStorage, then ?query, then sane
+  // values. The on-screen tuning panel (non-transparent overlay) edits these and
+  // re-applies the dance instantly, so the correct combo can be found by eye.
+  function _lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+  function _lsSet(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} }
+  const mmdCfg = {
+    axis: parseInt(_lsGet('mmdAxis', (QUERY && QUERY.get('mmdaxis')) || '1'), 10) || 0,
+    ik: _lsGet('mmdIK', (QUERY && QUERY.get('ik')) || '1') !== '0',
+    armDeg: parseFloat(_lsGet('mmdArm', (QUERY && QUERY.get('armangle')) || '35')) || 0,
+    knee: parseFloat(_lsGet('mmdKnee', '1')) || 1,   // +1 knees forward, -1 backward
+  };
   // The torso is handled specially (see updateMmd): MMD splits it into upper
   // body (上半身) and lower body (下半身) both under the center, while VRM has a
   // single hips→spine chain. These are the SIMPLE 1:1 bones only.
@@ -573,8 +594,7 @@
 
   // Leg IK: MMD dances drive the legs through foot-IK target bones (足ＩＫ), not
   // direct leg rotations, so we solve a 2-bone IK so the ankle reaches the
-  // (position-animated) IK target. Disable with ?ik=0 to fall back to raw FK.
-  const MMD_USE_IK = ((QUERY && QUERY.get('ik')) || '1') !== '0';
+  // (position-animated) IK target. Toggle live in the tuning panel (mmdCfg.ik).
   const MMD_IK = {
     left:  { ik: '左足ＩＫ', toe: '左つま先ＩＫ', upper: 'leftUpperLeg', lower: 'leftLowerLeg', foot: 'leftFoot' },
     right: { ik: '右足ＩＫ', toe: '右つま先ＩＫ', upper: 'rightUpperLeg', lower: 'rightLowerLeg', foot: 'rightFoot' },
@@ -608,17 +628,13 @@
   }
 
   // Arm A-pose offset: VRM rests in a T-pose (arms straight out) but MMD rests in
-  // an A-pose (arms down), so without this the arms sit out at a T-pose. The
-  // amount is ?armangle (default 35°, negative raises). The DIRECTION is computed
-  // from each arm's real rest geometry (see _computeArmOffsets) so it always
+  // an A-pose (arms down). The amount is mmdCfg.armDeg (tunable in the panel);
+  // the DIRECTION is computed from each arm's real rest geometry so it always
   // drops the arms regardless of the model's axis convention.
-  const MMD_ARM_ANGLE = (parseFloat((QUERY && QUERY.get('armangle')) || '35') || 0) * Math.PI / 180;
-
-  // Build per-upper-arm local offset quaternions that rotate the (horizontal)
-  // rest arm DOWN by MMD_ARM_ANGLE. Returns {leftUpperArm, rightUpperArm}.
   function _computeArmOffsets(hb) {
     const off = {};
-    if (!MMD_ARM_ANGLE || !hb) return off;
+    const angle = (mmdCfg.armDeg || 0) * Math.PI / 180;
+    if (!angle || !hb) return off;
     const up = new THREE.Vector3(0, 1, 0);
     for (const [armBone, childBone] of [['leftUpperArm', 'leftLowerArm'], ['rightUpperArm', 'rightLowerArm']]) {
       const a = hb.getNormalizedBoneNode(armBone);
@@ -631,7 +647,7 @@
       if (axis.lengthSq() < 1e-6) continue;
       axis.normalize();
       // World pre-rotation that tips the arm toward -Y (down).
-      const P = new THREE.Quaternion().setFromAxisAngle(axis, -MMD_ARM_ANGLE);
+      const P = new THREE.Quaternion().setFromAxisAngle(axis, -angle);
       const pwq = a.parent ? a.parent.getWorldQuaternion(new THREE.Quaternion()) : new THREE.Quaternion();
       // Convert the world pre-rotation into the bone's local (parent) frame.
       off[armBone] = pwq.clone().invert().multiply(P).multiply(pwq);
@@ -641,10 +657,11 @@
 
   let mmd = null;          // active dance state, or null
   let mmdAudio = null;     // HTMLAudioElement for the dance track
+  let lastMmdPayload = null; // remember the last dance so the tuning panel can re-apply
 
   function _convQuat(r) {
     const x = r[0], y = r[1], z = r[2], w = r[3];
-    switch (MMD_AXIS) {
+    switch (mmdCfg.axis) {
       case 0:  return new THREE.Quaternion(x, y, z, w);     // as-is
       case 2:  return new THREE.Quaternion(x, -y, -z, w);   // mirror X axis
       case 3:  return new THREE.Quaternion(-x, y, -z, w);   // mirror Y axis
@@ -653,7 +670,7 @@
   }
   function _convPos(p) {
     const s = MMD_POS_SCALE;
-    switch (MMD_AXIS) {
+    switch (mmdCfg.axis) {
       case 0:  return new THREE.Vector3(p[0] * s,  p[1] * s,  p[2] * s);
       case 2:  return new THREE.Vector3(-p[0] * s, p[1] * s,  p[2] * s);
       case 3:  return new THREE.Vector3(p[0] * s,  p[1] * s, -p[2] * s);
@@ -676,6 +693,7 @@
 
   async function startMmd(payload) {
     if (!currentVrm) { logMessage('Load a VRM before playing MMD.'); return; }
+    lastMmdPayload = payload;
     try {
       stopMmd(false);
       logMessage(`MMD: loading ${payload.motion}`);
@@ -724,7 +742,7 @@
         const armOffsets = _computeArmOffsets(hb);
         for (const s of simple) if (armOffsets[s.vrmBone]) s.offset = armOffsets[s.vrmBone];
       }
-      if (MMD_USE_IK && hb) {
+      if (mmdCfg.ik && hb) {
         ik = { sceneQuat: currentVrm.scene.getWorldQuaternion(new THREE.Quaternion()) };
         for (const side of ['left', 'right']) {
           const cfg = MMD_IK[side];
@@ -817,6 +835,44 @@
   window.addEventListener('pointerdown', () => { if (!audioUnlocked) unlockAudio(); }, { once: true });
   window.addEventListener('keydown', () => { if (!audioUnlocked) unlockAudio(); }, { once: true });
 
+  // ── Live MMD tuning panel (non-transparent overlay) ──────────────────────────
+  function _mmdReapply() {
+    if (lastMmdPayload) startMmd(lastMmdPayload);
+  }
+  function _refreshTunePanel() {
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set('mt-axisval', mmdCfg.axis);
+    set('mt-kneeval', mmdCfg.knee > 0 ? 'Forward' : 'Backward');
+    set('mt-ikval', mmdCfg.ik ? 'On' : 'Off');
+    set('mt-armval', Math.round(mmdCfg.armDeg));
+    const axisWrap = document.getElementById('mt-axis');
+    if (axisWrap && !axisWrap.childElementCount) {
+      [0, 1, 2, 3].forEach((n) => {
+        const b = document.createElement('button');
+        b.textContent = n; b.style.cssText = 'flex:1;padding:6px';
+        b.onclick = () => { mmdCfg.axis = n; _lsSet('mmdAxis', n); _refreshTunePanel(); _mmdReapply(); };
+        axisWrap.appendChild(b);
+      });
+    }
+  }
+  function _setupTunePanel() {
+    const panel = document.getElementById('mmdTune');
+    if (!panel || TRANSPARENT) return;     // hidden in OBS overlay mode
+    panel.style.display = 'block';
+    panel.querySelectorAll('[data-knee]').forEach((b) => b.onclick = () => {
+      mmdCfg.knee = parseFloat(b.dataset.knee); _lsSet('mmdKnee', mmdCfg.knee); _refreshTunePanel(); _mmdReapply();
+    });
+    panel.querySelectorAll('[data-ik]').forEach((b) => b.onclick = () => {
+      mmdCfg.ik = b.dataset.ik === '1'; _lsSet('mmdIK', mmdCfg.ik ? '1' : '0'); _refreshTunePanel(); _mmdReapply();
+    });
+    const armSet = (d) => { mmdCfg.armDeg = Math.max(-90, Math.min(90, mmdCfg.armDeg + d)); _lsSet('mmdArm', mmdCfg.armDeg); _refreshTunePanel(); _mmdReapply(); };
+    const dn = document.getElementById('mt-arm-dn'); if (dn) dn.onclick = () => armSet(-5);   // less down
+    const upb = document.getElementById('mt-arm-up'); if (upb) upb.onclick = () => armSet(5);  // more down
+    const rep = document.getElementById('mt-replay'); if (rep) rep.onclick = _mmdReapply;
+    _refreshTunePanel();
+  }
+  _setupTunePanel();
+
   function stopMmd(restore = true) {
     if (mmdAudio) { try { mmdAudio.pause(); } catch (e) {} mmdAudio = null; }
     if (audioUnlockBtn) audioUnlockBtn.style.display = 'none';
@@ -887,7 +943,7 @@
     // while the hips move). Knee bends forward (pole = world forward).
     if (mmd.ik) {
       currentVrm.scene.updateMatrixWorld(true);
-      const pole = new THREE.Vector3(0, 0, 1).applyQuaternion(mmd.ik.sceneQuat);
+      const pole = new THREE.Vector3(0, 0, mmdCfg.knee).applyQuaternion(mmd.ik.sceneQuat);
       for (const side of ['left', 'right']) {
         const leg = mmd.ik[side];
         if (!leg) continue;
