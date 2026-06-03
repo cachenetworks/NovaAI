@@ -549,6 +549,7 @@ function Create-Launchers {
     # in .nova-run-mode so it can be flipped later without re-installing.
     Set-Content -Path "$INSTALL_DIR\.nova-run-mode" -Value "--$mode" -Encoding ASCII
     $batPath = "$INSTALL_DIR\run-nova.bat"
+    $icoPath = "$INSTALL_DIR\data\logo.ico"
     if ($mode -eq "web") {
         $batBody = @"
 @echo off
@@ -569,14 +570,30 @@ cd /d "%~dp0"
     Set-Content -Path $batPath -Value $batBody -Encoding ASCII
     Write-Ok "Launcher script: $batPath  (mode: --$mode)"
 
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        $launcherShortcutPath = "$INSTALL_DIR\NovaAI.lnk"
+        $launcherShortcut = $shell.CreateShortcut($launcherShortcutPath)
+        $launcherShortcut.TargetPath = $batPath
+        $launcherShortcut.Arguments = ""
+        $launcherShortcut.WorkingDirectory = $INSTALL_DIR
+        $launcherShortcut.Description = "NovaAI - AI Companion Studio ($mode)"
+        if (Test-Path $icoPath) {
+            $launcherShortcut.IconLocation = "$icoPath,0"
+        }
+        $launcherShortcut.Save()
+        Write-Ok "Icon launcher: $launcherShortcutPath"
+    } catch {
+        Write-Warn "Couldn't create icon launcher: $_"
+    }
+
     if (-not (Ask-YesNo "Create a desktop shortcut for NovaAI?")) {
-        Write-Ok "No shortcut created. Start with: run-nova.bat"
+        Write-Ok "No desktop shortcut created. Start with: run-nova.bat or NovaAI.lnk"
         return
     }
     try {
         $desktopPath = [Environment]::GetFolderPath("Desktop")
         $shortcutPath = "$desktopPath\NovaAI.lnk"
-        $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($shortcutPath)
         if ($mode -eq "web") {
             # Web mode: launch via the .bat so the browser opens too.
@@ -590,7 +607,6 @@ cd /d "%~dp0"
         $shortcut.WorkingDirectory = $INSTALL_DIR
         $shortcut.Description = "NovaAI - AI Companion Studio ($mode)"
 
-        $icoPath = "$INSTALL_DIR\data\logo.ico"
         if (Test-Path $icoPath) {
             $shortcut.IconLocation = "$icoPath,0"
         }

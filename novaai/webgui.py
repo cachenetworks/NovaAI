@@ -98,6 +98,8 @@ from .web_search import (
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 ICON_PATH = Path(__file__).resolve().parent.parent / "data" / "logo.ico"
+WINDOW_TITLE = "NovaAI Studio"
+WINDOWS_APP_ID = "NekoSuneProjects.NovaAI.Studio"
 _window: "webview.Window | None" = None
 # Pluggable JS sink for headless web mode. When set (by novaai/webserver.py),
 # Api._js() relays code here instead of to a pywebview window. See _js().
@@ -2403,6 +2405,18 @@ class Api:
         t.start()
 
 
+def _set_windows_app_id() -> None:
+    """Set the Windows taskbar app identity before the GUI window is created."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
+    except Exception:
+        pass
+
+
 def _set_window_icon() -> None:
     """Set the taskbar and title-bar icon on Windows via Win32 API."""
     if sys.platform != "win32" or not ICON_PATH.exists():
@@ -2415,20 +2429,29 @@ def _set_window_icon() -> None:
         ICON_SMALL = 0
         ICON_BIG = 1
         LR_LOADFROMFILE = 0x0010
+        LR_DEFAULTSIZE = 0x0040
+        IMAGE_ICON = 1
 
         icon_path = str(ICON_PATH)
-        h_small = user32.LoadImageW(0, icon_path, 1, 16, 16, LR_LOADFROMFILE)
-        h_big = user32.LoadImageW(0, icon_path, 1, 32, 32, LR_LOADFROMFILE)
+        h_small = user32.LoadImageW(0, icon_path, IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
+        h_big = user32.LoadImageW(
+            0,
+            icon_path,
+            IMAGE_ICON,
+            0,
+            0,
+            LR_LOADFROMFILE | LR_DEFAULTSIZE,
+        )
 
-        # Try multiple ways to find our window handle
-        hwnd = user32.FindWindowW(None, "NovaAI Studio")
-        if not hwnd:
-            hwnd = user32.GetForegroundWindow()
-        if hwnd:
-            if h_small:
-                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, h_small)
-            if h_big:
-                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, h_big)
+        for _ in range(20):
+            hwnd = user32.FindWindowW(None, WINDOW_TITLE)
+            if hwnd:
+                if h_small:
+                    user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, h_small)
+                if h_big:
+                    user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, h_big)
+                return
+            time.sleep(0.25)
     except Exception:
         pass
 
@@ -2444,6 +2467,7 @@ def main() -> None:
     # The desktop GUI is a local app, so its sibling services (avatar overlay,
     # Minecraft live view) stay bound to localhost only.
     os.environ.setdefault("NOVA_BIND_HOST", "127.0.0.1")
+    _set_windows_app_id()
 
     api = Api()
     html_path = STATIC_DIR / "index.html"
@@ -2453,7 +2477,7 @@ def main() -> None:
         threading.Thread(target=_set_window_icon, daemon=True).start()
 
     _window = webview.create_window(
-        title="NovaAI Studio",
+        title=WINDOW_TITLE,
         url=str(html_path),
         js_api=api,
         width=1340,
