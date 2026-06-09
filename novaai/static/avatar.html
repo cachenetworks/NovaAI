@@ -203,6 +203,15 @@
   const QUERY = new URLSearchParams(location.search);
   const TRANSPARENT = QUERY.has('transparent');
   const IDLE_ENABLED = !QUERY.has('noidle');
+  // Default framing pull-back (how much of the body is in shot). Higher = more
+  // zoomed out / fuller body. A touch wider in the OBS overlay so the avatar
+  // sits comfortably in the corner. Tunable per-link with ?framezoom=1.8.
+  const FRAME_ZOOM = parseFloat(QUERY.get('framezoom')) || (TRANSPARENT ? 1.9 : 1.6);
+  // Closest the dance camera may ever get to the avatar, in metres. The MMD
+  // camera track has dramatic close-ups that otherwise bury the lens inside the
+  // model; this floor keeps her fully in frame. Higher = always farther back.
+  // Tune per-link with ?mmdmindist=3.
+  const MMD_CAM_MIN_DIST = parseFloat(QUERY.get('mmdmindist')) || 2.4;
   renderer.setClearColor(0x07131d, TRANSPARENT ? 0 : 1);
   if (TRANSPARENT) {
     // Hide all UI chrome — only the avatar canvas shows (see body.obs-mode CSS).
@@ -221,14 +230,25 @@
   controls.minDistance = 0.15;
   controls.maxDistance = 50;
   controls.enabled = !QUERY.has('nocontrols');
+  // The MMD dance ships its own camera track that pans/zooms with the avatar.
+  // It drives the view by DEFAULT (so the OBS overlay follows the dance) and
+  // yields the instant you grab the camera to reframe — manualCamera flips true
+  // on the OrbitControls 'start' event below, and double-click resumes tracking.
+  // Pass ?nomeshcam=1 to lock the dance camera off and keep your manual frame.
+  const MMD_CAM_ENABLED = !QUERY.has('nomeshcam');
   let manualCamera = false;          // user grabbed the camera → stop auto-framing it
   controls.addEventListener('start', () => { manualCamera = true; });
   canvas.addEventListener('dblclick', () => { manualCamera = false; frameAvatar(); });
   // Visible confirmation the camera-controls build is loaded (helps spot a stale
   // cached page). If you DON'T see this line in the log, hard-refresh the page.
-  setTimeout(() => logMessage(controls.enabled
-    ? '🖱 Camera controls ON — drag to orbit, scroll to zoom, right-drag to pan, double-click to reset.'
-    : 'Camera controls off (?nocontrols=1).'), 0);
+  setTimeout(() => {
+    logMessage(controls.enabled
+      ? '🖱 Camera controls ON — drag to orbit, scroll to zoom, right-drag to pan, double-click to reset.'
+      : 'Camera controls off (?nocontrols=1).');
+    logMessage(MMD_CAM_ENABLED
+      ? '🎥 Dance camera ON — the view tracks the dance until you grab the camera (double-click to resume).'
+      : 'Dance camera off (?nomeshcam=1) — manual frame stays fixed.');
+  }, 0);
 
   const light = new THREE.HemisphereLight(0xffffff, 0x222222, 1);
   scene.add(light);
@@ -279,7 +299,7 @@
     const aspect = camera.aspect || 1;
     const fitHeight = size.y / 2 / Math.tan(fov / 2);
     const fitWidth = size.x / 2 / Math.tan(fov / 2) / aspect;
-    const dist = Math.max(fitHeight, fitWidth) * 1.15 + size.z;
+    const dist = Math.max(fitHeight, fitWidth) * FRAME_ZOOM + size.z;
     camera.position.set(center.x, center.y, center.z + dist);
     camera.near = Math.max(0.01, dist / 100);
     camera.far = Math.max(1000, dist * 50);   // generous so zoom-out never clips
@@ -558,9 +578,11 @@
     // any older saved default.
     axis: parseInt(_lsGet('mmdAxisV2', (QUERY && QUERY.get('mmdaxis')) || '2'), 10) || 0,
     ik: _lsGet('mmdIKv2', (QUERY && QUERY.get('ik')) || '1') !== '0',  // default ON: CCD leg IK (knee-hinged)
-    armDeg: parseFloat(_lsGet('mmdArm', (QUERY && QUERY.get('armangle')) || '35')) || 0,
-    knee: parseFloat(_lsGet('mmdKnee', '1')) || 1,   // +1 knees forward, -1 backward
-    zoom: parseFloat(_lsGet('mmdZoom', (QUERY && QUERY.get('mmdzoom')) || '1.35')) || 1.35,  // camera pull-back
+    armDeg: parseFloat(_lsGet('mmdArm', (QUERY && QUERY.get('armangle')) || '30')) || 0,
+    knee: parseFloat(_lsGet('mmdKnee', '-1')) || -1,   // +1 knees forward, -1 backward (default)
+    // Dance-camera pull-back. Higher = farther. ?mmdzoom= wins over the saved
+    // value so you always have a reliable override even with a stale cache.
+    zoom: parseFloat((QUERY && QUERY.get('mmdzoom')) || _lsGet('mmdZoom', '7')) || 7,
   };
   // The torso is handled specially (see updateMmd): MMD splits it into upper
   // body (上半身) and lower body (下半身) both under the center, while VRM has a
@@ -776,7 +798,9 @@
       // (T-pose) rest — NOT the idle pose — so the arm/leg geometry is clean.
       let ik = null;
       if (hb) {
-        const measure = ['leftUpperArm', 'leftLowerArm', 'rightUpperArm', 'rightLowerArm',
+        const measure = ['leftShoulder', 'rightShoulder',
+          'leftUpperArm', 'leftLowerArm', 'rightUpperArm', 'rightLowerArm',
+          'leftHand', 'rightHand', 'neck', 'head',
           'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot',
           'hips', 'spine', 'chest'];
         for (const b of measure) { const n = hb.getNormalizedBoneNode(b); if (n) n.quaternion.identity(); }
@@ -932,7 +956,9 @@
   }
   function _setupTunePanel() {
     const panel = document.getElementById('mmdTune');
-    if (!panel || TRANSPARENT) return;     // hidden in OBS overlay mode
+    // Hidden in the clean OBS overlay, but ?tune=1 forces it on even there so
+    // the leg/axis/IK combo can be dialled in live against the real dance.
+    if (!panel || (TRANSPARENT && !QUERY.has('tune'))) return;
     panel.style.display = 'block';
     panel.querySelectorAll('[data-knee]').forEach((b) => b.onclick = () => {
       mmdCfg.knee = parseFloat(b.dataset.knee); _lsSet('mmdKnee', mmdCfg.knee); _refreshTunePanel(); _mmdReapply();
@@ -986,7 +1012,14 @@
       }
     }
     let t = clock.elapsedTime - mmd.start;
-    if (t >= mmd.duration) {
+    // Run the dance for the WHOLE song. The motion's last keyframe (mmd.duration)
+    // often lands before the audio ends; without this the dance would hit that
+    // mark and stopMmd() would cut the music off half-way. End at the LATER of
+    // motion length and audio length — once the motion runs out _sample() just
+    // holds the final pose while the song plays out to the end.
+    const audioDur = (mmdAudio && isFinite(mmdAudio.duration)) ? mmdAudio.duration : 0;
+    const endT = Math.max(mmd.duration, audioDur);
+    if (t >= endT) {
       if (mmd.loop) {
         mmd.start = clock.elapsedTime; t = 0;
         if (mmdAudio) { try { mmdAudio.currentTime = 0; mmdAudio.play().catch(() => {}); } catch (e) {} }
@@ -1072,13 +1105,17 @@
     // positions. Pull back a bit (mmdCfg.zoom) and use a tiny near plane so
     // close clothes/geometry don't clip and vanish. Skipped once the user grabs
     // the camera (manual orbit/zoom wins; double-click to return to auto).
-    if (mmd.camKeys.length && !manualCamera) {
+    if (MMD_CAM_ENABLED && mmd.camKeys.length && !manualCamera) {
       const c = _sampleCamera(mmd.camKeys, t);
       if (c) {
         const e = new THREE.Euler(-c.rot[0], -c.rot[1], c.rot[2], 'YXZ');
         const dir = new THREE.Vector3(0, 0, 1).applyEuler(e);
         const target = c.target.clone();
-        const dist = Math.abs(c.distance) * MMD_POS_SCALE * (mmdCfg.zoom || 1);
+        // MMD dances are choreographed with dramatic close-up keyframes that
+        // can bury the camera inside the avatar. Floor the distance so the view
+        // still follows the dance's panning but never comes closer than
+        // MMD_CAM_MIN_DIST metres — keeps her in frame the whole time.
+        const dist = Math.max(MMD_CAM_MIN_DIST, Math.abs(c.distance) * MMD_POS_SCALE * (mmdCfg.zoom || 1));
         camera.position.copy(target).add(dir.multiplyScalar(dist));
         camera.lookAt(target);
         camera.near = 0.01;   // avoid near-plane clipping when close
@@ -1148,7 +1185,7 @@
       currentVrm.update(delta);
     }
     // Let the dance camera own the view while it's driving; otherwise OrbitControls.
-    const mmdCamDriving = mmd && mmd.camKeys && mmd.camKeys.length && !manualCamera;
+    const mmdCamDriving = MMD_CAM_ENABLED && mmd && mmd.camKeys && mmd.camKeys.length && !manualCamera;
     if (controls.enabled && !mmdCamDriving) controls.update();
     renderer.render(scene, camera);
   }
@@ -1185,6 +1222,20 @@
         cacheBones(vrm);                          // grab humanoid bones for posing
         applyRestPoseImmediate();                 // lower arms out of the T-pose
         frameAvatar();                            // auto-fit to the (posed) model
+        // Rig diagnostic: if limbs don't move / arms stay T-posed, this line
+        // tells us why. "humanoid MISSING" or a low bone count means the model
+        // isn't a rigged VRM humanoid, so no pose/dance can drive the limbs.
+        const foundBones = POSE_BONES.filter((n) => boneNodes[n]);
+        const hasArms = !!(boneNodes.leftUpperArm && boneNodes.rightUpperArm);
+        const hasLegs = !!(vrm.humanoid && vrm.humanoid.getNormalizedBoneNode('leftUpperLeg')
+          && vrm.humanoid.getNormalizedBoneNode('rightUpperLeg'));
+        logMessage(`Rig: humanoid ${vrm.humanoid ? 'OK' : 'MISSING'}, `
+          + `${foundBones.length}/${POSE_BONES.length} pose bones, `
+          + `arms ${hasArms ? 'yes' : 'NO'}, legs ${hasLegs ? 'yes' : 'NO'}, `
+          + `expressions ${vrm.expressionManager ? 'OK' : 'none'}`);
+        if (!vrm.humanoid || !hasArms) {
+          logMessage('⚠ Limbs can’t be posed: this VRM has no usable humanoid rig.');
+        }
         setModelStatus(url.split('/').pop() || 'Loaded');
         applyExpression(expressionBadge.textContent.replace('Expression: ', '').toLowerCase());
       },

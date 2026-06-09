@@ -297,8 +297,11 @@ class NovaWebHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", _guess_content_type(path))
         self.send_header("Content-Length", str(len(content)))
-        self.end_headers()
-        self.wfile.write(content)
+        try:
+            self.end_headers()
+            self.wfile.write(content)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass  # browser disconnected mid-transfer; nothing to do
 
     # ── POST ─────────────────────────────────────────────────────────────────
     def do_POST(self) -> None:
