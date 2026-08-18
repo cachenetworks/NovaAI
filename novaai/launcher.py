@@ -9,6 +9,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+# Security-first defaults. Operators can still opt in to LAN/public exposure and
+# automatic installation explicitly through the documented environment values.
+os.environ.setdefault("NOVA_WEB_HOST", "127.0.0.1")
+os.environ.setdefault("AUTO_UPDATE_INSTALL", "false")
 
 from .cli import main as cli_main
 from .updater import (
@@ -36,9 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
         dest="web",
         action="store_true",
         help=(
-            "Run the headless web UI: serve the browser interface over HTTP so "
-            "you can reach NovaAI from any device. Best for a headless Pi/Linux box. "
-            "Configure with NOVA_WEB_HOST / NOVA_WEB_PORT (default 0.0.0.0:8800)."
+            "Run the headless web UI: serve the browser interface over HTTP. "
+            "It binds to 127.0.0.1 by default for safety; set NOVA_WEB_HOST "
+            "explicitly if you intentionally want LAN/public access. Configure "
+            "the port with NOVA_WEB_PORT (default 8800)."
         ),
     )
     return parser
