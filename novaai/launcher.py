@@ -9,10 +9,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-# Security-first defaults. Operators can still opt in to LAN/public exposure and
-# automatic installation explicitly through the documented environment values.
+# Security-first network default. Operators can still opt in to LAN/public
+# exposure explicitly with NOVA_WEB_HOST. Automatic update installation is
+# independently opt-in in updater.py, while .env can deliberately enable it.
 os.environ.setdefault("NOVA_WEB_HOST", "127.0.0.1")
-os.environ.setdefault("AUTO_UPDATE_INSTALL", "false")
 
 from .cli import main as cli_main
 from .updater import (
