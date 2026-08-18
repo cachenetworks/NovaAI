@@ -22,7 +22,9 @@ DEFAULT_GITHUB_REPO = "cachenetworks/NovaAI"
 DEFAULT_GITHUB_BRANCH = "main"
 DEFAULT_UPDATE_CACHE_SECONDS = 21600
 DEFAULT_AUTO_UPDATE_CHECK = True
-DEFAULT_AUTO_UPDATE_INSTALL = True
+# Security-first: checking for an update is harmless, but replacing executable
+# application files is a privileged supply-chain action and must be opted into.
+DEFAULT_AUTO_UPDATE_INSTALL = False
 GITHUB_REQUEST_HEADERS = {"User-Agent": "NovaAI-Updater"}
 
 UPDATE_EXCLUDED_TOP_LEVEL = {
